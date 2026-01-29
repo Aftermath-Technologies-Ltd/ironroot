@@ -11,7 +11,7 @@
 ![React](https://img.shields.io/badge/React-61dafb?style=for-the-badge&logo=react&logoColor=black)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
 
-**140 tests passing** · **51%+ coverage** · **Zero tolerance for slop**
+**140 tests passing** · **51%+ coverage** · **Strict quality gates**
 
 </div>
 
@@ -19,11 +19,15 @@
 
 ## What This Is
 
-A production-grade agent ecosystem that evolves reliable cognitive behaviors under adversarial pressure.
+A system for running AI agents that must prove their work is correct before they can evolve.
 
-Multi-agent research loops where agents **earn survival** by producing verifiable, reproducible work. Memory is append-only and tamper-evident. Errors have irreversible consequences. Self-healing means detection, containment, rollback, and repair with permanent test additions. Self-evolving means controlled mutation and selection over explicitly versioned strategies.
+Agents run in supervised loops. They propose changes, build implementations, write tests, and verify each other's work. Memory is write-once - you can add new records but never edit old ones. Every file is stored by its content hash, so tampering is obvious. Agents that fail lose resources permanently. There are no resets.
 
-**This is not a chatbot platform.** It is an engineering system for iterating on cognitive layers and agent strategies with hard evidence, auditability, and deterministic replay.
+When something breaks, the system stops accepting changes, rolls back to the last good state, runs a repair process, and adds a new test to prevent it from happening again.
+
+When agents evolve, they do so through explicit versioned strategies that must pass all verification gates before promotion. No hidden prompt changes, no silent drift.
+
+**This is not a chatbot.** It is a research platform for building agents that improve through hard evidence and adversarial testing.
 
 ---
 
@@ -80,15 +84,15 @@ graph TD
 
 ---
 
-## 🔑 Core Invariants
+## 🔑 Core Rules
 
-| Invariant | Enforcement | Proof |
-|-----------|-------------|-------|
-| **Beliefs are immutable** | No UPDATE endpoint, hash chain verification | [`append_only_store.py`](src/ironroot/cognition/memory/append_only_store.py) |
-| **Artifacts are content-addressed** | SHA256 paths, write-once semantics | [`artifacts.py`](src/ironroot/storage/artifacts.py) |
-| **Budgets are hard limits** | Exhaustion halts execution, no silent overruns | [`budgets.py`](src/ironroot/orchestration/budgets.py) |
-| **Promotion requires gate pass** | Strategy cannot promote without passing all gates | [`strategy_service.py`](src/ironroot/cognition/strategies/strategy_service.py) |
-| **Failures trigger containment** | Kill switch freezes commits on invariant break | [`kill_switch.py`](src/ironroot/orchestration/kill_switch.py) |
+| Rule | How It Works | Code |
+|------|--------------|------|
+| **Memory is write-once** | You can add beliefs but never edit or delete them. Hash chains verify nothing was tampered with. | [`append_only_store.py`](src/ironroot/cognition/memory/append_only_store.py) |
+| **Files are stored by content hash** | Same content = same path. If you change one byte, the hash changes. Tampering is obvious. | [`artifacts.py`](src/ironroot/storage/artifacts.py) |
+| **Budgets are enforced** | Agents have limited steps, tool calls, and memory writes. When they run out, they stop. No exceptions. | [`budgets.py`](src/ironroot/orchestration/budgets.py) |
+| **Promotion requires passing tests** | A strategy cannot be promoted unless all verification gates pass first. | [`strategy_service.py`](src/ironroot/cognition/strategies/strategy_service.py) |
+| **Failures trigger containment** | When something breaks, the system freezes changes and starts recovery. | [`kill_switch.py`](src/ironroot/orchestration/kill_switch.py) |
 
 ---
 
@@ -228,37 +232,37 @@ pytest --cov=src/ironroot         # Coverage report
 ## ❓ Skeptic's Corner
 
 <details>
-<summary><strong>Why append-only beliefs?</strong></summary>
+<summary><strong>Why write-once memory?</strong></summary>
 
-Mutable state hides history. [`append_only_store.py`](src/ironroot/cognition/memory/append_only_store.py) enforces immutability at DB and API layers. Contradictions are new events, not updates. Hash chains make drift detection trivial: break the chain, break the invariant.
-
-</details>
-
-<details>
-<summary><strong>Why content-addressed artifacts?</strong></summary>
-
-UUIDs require trust in the registry. SHA256 requires trust in math. [`artifacts.py`](src/ironroot/storage/artifacts.py) uses hash paths. Write-once means same content = same path. Integrity check is O(1): hash bytes, compare to path.
+If agents can edit their past beliefs, you lose the ability to see what they actually thought and when. The [`append_only_store.py`](src/ironroot/cognition/memory/append_only_store.py) prevents any updates or deletes. When an agent changes its mind, that's recorded as a new belief linked to the old one. The hash chain means if anyone tampers with history, the math breaks and you'll know.
 
 </details>
 
 <details>
-<summary><strong>Why explicit state machines?</strong></summary>
+<summary><strong>Why store files by hash?</strong></summary>
 
-Implicit flow hides control. [`supervisor.py`](src/ironroot/orchestration/supervisor.py) makes every transition explicit with entry/exit conditions. Kill switch can halt at any transition. Replay is deterministic: same inputs, same path.
-
-</details>
-
-<details>
-<summary><strong>Why adversarial verification?</strong></summary>
-
-Self-grading is a conflict of interest. [`verifier.py`](src/ironroot/agents/verifier.py) attempts falsification. [`auditor.py`](src/ironroot/agents/auditor.py) checks trace integrity. Neither has stake in proposals succeeding. [`regression_gate.py`](src/ironroot/verification/regression_gate.py) enforces: no promotion without adversarial tests.
+If you use random IDs, you're trusting that the database correctly tracks what's what. If you use content hashes, the file's identity is its content - same bytes always means same hash. The [`artifacts.py`](src/ironroot/storage/artifacts.py) module stores everything by its SHA256 hash. Change one byte, the hash changes, the path changes. You can't silently modify a file.
 
 </details>
 
 <details>
-<summary><strong>Why irreversible penalties?</strong></summary>
+<summary><strong>Why use explicit state machines?</strong></summary>
 
-Resets teach agents that failure is free. [`budgets.py`](src/ironroot/orchestration/budgets.py) tracks lifetime budgets that decrease on failure. Tool revocations never reset. This selects for calibrated agents. Overconfident agents burn budgets and die.
+When code "just runs" without clear phases, it's hard to know where things went wrong. The [`supervisor.py`](src/ironroot/orchestration/supervisor.py) defines every step: init, propose, build, test, verify, audit, decide. Each transition has rules. The kill switch can stop execution at any point. If you replay with the same inputs, you get the same path through the machine.
+
+</details>
+
+<details>
+<summary><strong>Why have separate verifiers?</strong></summary>
+
+Agents shouldn't grade their own work - that's a conflict of interest. The [`verifier.py`](src/ironroot/agents/verifier.py) exists specifically to try to break proposals. The [`auditor.py`](src/ironroot/agents/auditor.py) checks that the execution trace is intact. Neither one benefits from saying "yes" to bad work. The [`regression_gate.py`](src/ironroot/verification/regression_gate.py) ensures nothing gets promoted without passing these adversarial checks.
+
+</details>
+
+<details>
+<summary><strong>Why permanent penalties?</strong></summary>
+
+If agents can just retry after failing, they learn that failure is cheap. The [`budgets.py`](src/ironroot/orchestration/budgets.py) tracks lifetime limits - steps, tool calls, memory writes. Fail a verification? You lose budget permanently. Get a tool revoked? It stays revoked. This pressure selects for agents that are careful and calibrated. Reckless agents run out of resources and stop.
 
 </details>
 

@@ -53,7 +53,7 @@ export interface StrategyListResponse {
 }
 
 export interface Belief {
-  id: string
+  belief_id: string
   run_id: string
   agent_id: string
   content_hash: string
@@ -61,6 +61,7 @@ export interface Belief {
   content: Record<string, unknown>
   confidence: number
   topic_tags: string[]
+  evidence_ids: string[]
   created_at: string
 }
 

@@ -78,8 +78,8 @@ export function Beliefs() {
               </tr>
             ) : (
               beliefs.map((belief) => (
-                <tr key={belief.id}>
-                  <td className="hash">{belief.id.slice(0, 12)}...</td>
+                <tr key={belief.belief_id}>
+                  <td className="hash">{belief.belief_id.slice(0, 12)}...</td>
                   <td className="hash">{belief.run_id.slice(0, 12)}...</td>
                   <td>{belief.agent_id}</td>
                   <td>

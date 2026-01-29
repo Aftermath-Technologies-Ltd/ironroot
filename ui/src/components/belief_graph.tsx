@@ -23,7 +23,7 @@ export function BeliefGraph({ beliefs }: BeliefGraphProps) {
     const indent = '  '.repeat(depth)
 
     return (
-      <div key={belief.id}>
+      <div key={belief.belief_id}>
         <div style={{ fontFamily: 'monospace', fontSize: '0.875rem' }}>
           {indent}├─ <span className="hash">{belief.content_hash.slice(0, 12)}</span>
           {' '}
