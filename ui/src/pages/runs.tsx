@@ -11,6 +11,7 @@ export function Runs() {
   const [error, setError] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
   const [seedInput, setSeedInput] = useState('')
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
 
   useEffect(() => {
     loadRuns()
@@ -19,6 +20,7 @@ export function Runs() {
   async function loadRuns() {
     try {
       setLoading(true)
+      setError(null)
       const response = await api.listRuns({ limit: 100 })
       setRuns(response.runs)
 
@@ -43,6 +45,7 @@ export function Runs() {
   async function handleCreateRun() {
     try {
       setCreating(true)
+      setError(null)
       const seed = seedInput ? parseInt(seedInput, 10) : Math.floor(Math.random() * 1000000)
       if (isNaN(seed)) {
         setError('Seed must be a number')
@@ -50,11 +53,50 @@ export function Runs() {
       }
       await api.createRun({ seed })
       setSeedInput('')
-      loadRuns()
+      await loadRuns()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create run')
     } finally {
       setCreating(false)
+    }
+  }
+
+  async function handleStartRun(runId: string) {
+    try {
+      setActionLoading(runId)
+      setError(null)
+      await api.startRun(runId)
+      await loadRuns()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start run')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  async function handleStopRun(runId: string) {
+    try {
+      setActionLoading(runId)
+      setError(null)
+      await api.stopRun(runId)
+      await loadRuns()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to stop run')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  async function handleExecuteGates(runId: string) {
+    try {
+      setActionLoading(runId)
+      setError(null)
+      await api.executeGates(runId)
+      await loadRuns()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to execute gates')
+    } finally {
+      setActionLoading(null)
     }
   }
 
@@ -182,9 +224,45 @@ export function Runs() {
                       )}
                     </td>
                     <td>
-                      <Link to={`/runs/${run.run_id}`} className="btn" style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}>
-                        Details
-                      </Link>
+                      <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap' }}>
+                        {run.status === 'pending' && (
+                          <button
+                            className="btn btn-primary"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                            onClick={() => handleStartRun(run.run_id)}
+                            disabled={actionLoading === run.run_id}
+                          >
+                            {actionLoading === run.run_id ? '...' : '▶ Start'}
+                          </button>
+                        )}
+                        {run.status === 'running' && (
+                          <button
+                            className="btn"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                            onClick={() => handleStopRun(run.run_id)}
+                            disabled={actionLoading === run.run_id}
+                          >
+                            {actionLoading === run.run_id ? '...' : '◼ Stop'}
+                          </button>
+                        )}
+                        {(run.status === 'running' || run.status === 'completed') && (
+                          <button
+                            className="btn"
+                            style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                            onClick={() => handleExecuteGates(run.run_id)}
+                            disabled={actionLoading === run.run_id}
+                          >
+                            {actionLoading === run.run_id ? '...' : '✓ Gates'}
+                          </button>
+                        )}
+                        <Link
+                          to={`/runs/${run.run_id}`}
+                          className="btn"
+                          style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                        >
+                          Details
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 )

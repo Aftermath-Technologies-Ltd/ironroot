@@ -48,10 +48,14 @@ class RunService:
         return result.scalar_one_or_none()
 
     async def start_run(self, session: AsyncSession, run_id: str) -> RunRecord:
-        """starts a run, transitions from INIT to PROPOSE."""
+        """starts a run, transitions from INIT to PROPOSE. Safe to call multiple times."""
         run = await self.get_run(session, run_id)
         if not run:
             raise NotFoundError("run", run_id)
+
+        # Already started - return current state without error
+        if run.status == "running" or run.phase != "init":
+            return run
 
         supervisor = Supervisor(run_id, run.seed)
         supervisor.phase = RunPhase(run.phase)
