@@ -1,0 +1,213 @@
+# Author: Bradley R. Kinnard
+"""sqlalchemy models for all database tables."""
+
+from datetime import datetime
+from typing import Any
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from ironroot.storage.postgres import Base
+
+
+class ArtifactRecord(Base):
+    """metadata for content-addressed artifacts."""
+
+    __tablename__ = "artifacts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    artifact_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        Index("ix_artifacts_type_created", "artifact_type", "created_at"),
+        UniqueConstraint("content_hash", name="uq_artifacts_content_hash"),
+    )
+
+
+class RunRecord(Base):
+    """run configuration and status."""
+
+    __tablename__ = "runs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    seed: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    phase: Mapped[str] = mapped_column(String(20), nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # budget tracking
+    steps_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tool_calls_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    belief_writes_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    beliefs: Mapped[list["BeliefRecord"]] = relationship(back_populates="run")
+    agents: Mapped[list["AgentRecord"]] = relationship(back_populates="run")
+    incidents: Mapped[list["IncidentRecord"]] = relationship(back_populates="run")
+    gates: Mapped[list["GateRecord"]] = relationship(back_populates="run")
+
+
+class BeliefRecord(Base):
+    """append-only belief records with hash chain."""
+
+    __tablename__ = "beliefs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("runs.id"), nullable=False, index=True
+    )
+    agent_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    parent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    content: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    topic_tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    run: Mapped["RunRecord"] = relationship(back_populates="beliefs")
+    contradictions: Mapped[list["ContradictionRecord"]] = relationship(
+        back_populates="belief", foreign_keys="ContradictionRecord.belief_id"
+    )
+
+    __table_args__ = (Index("ix_beliefs_run_agent", "run_id", "agent_id"),)
+
+
+class ContradictionRecord(Base):
+    """links between contradicting beliefs."""
+
+    __tablename__ = "contradictions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    belief_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("beliefs.id"), nullable=False, index=True
+    )
+    contradicts_belief_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("beliefs.id"), nullable=False, index=True
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    detected_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+
+    belief: Mapped["BeliefRecord"] = relationship(
+        back_populates="contradictions", foreign_keys=[belief_id]
+    )
+    contradicts: Mapped["BeliefRecord"] = relationship(foreign_keys=[contradicts_belief_id])
+
+
+class AgentRecord(Base):
+    """agent state including budgets and penalties."""
+
+    __tablename__ = "agents"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("runs.id"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    # budgets
+    max_steps: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_tool_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    steps_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tool_calls_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    # penalties
+    penalty_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tools_revoked: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    restricted_tasks: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    terminated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    run: Mapped["RunRecord"] = relationship(back_populates="agents")
+
+
+class StrategyRecord(Base):
+    """versioned strategy manifests."""
+
+    __tablename__ = "strategies"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    version: Mapped[str] = mapped_column(String(20), nullable=False)
+    manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    manifest: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+
+    # status
+    gate_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    promoted: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    promoted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # scoring
+    correctness_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reproducibility_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    efficiency_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    safety_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("name", "version", name="uq_strategies_name_version"),)
+
+
+class IncidentRecord(Base):
+    """failure incidents with evidence."""
+
+    __tablename__ = "incidents"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("runs.id"), nullable=False, index=True
+    )
+    agent_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    incident_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(20), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    penalties_applied: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    run: Mapped["RunRecord"] = relationship(back_populates="incidents")
+
+
+class GateRecord(Base):
+    """gate execution results."""
+
+    __tablename__ = "gates"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("runs.id"), nullable=False, index=True
+    )
+    gate_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    artifact_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    results: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    executed_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.utcnow
+    )
+
+    run: Mapped["RunRecord"] = relationship(back_populates="gates")

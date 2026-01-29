@@ -117,23 +117,6 @@ This is not a chatbot platform. It is an engineering system for iterating on cog
 
 ---
 
-## Skeptical engineer review (done first, then fixed)
-### Flags I would call out
-1. “Self-healing” and “self-evolving” are often marketing words with no measurable definition.
-2. Multi-agent “verification” is usually vibes, not verification.
-3. Any system that claims novelty without strict baselines and leak controls is just reinventing failure.
-4. Systems like this tend to drift into prompt soup unless contracts, determinism, and tests are enforced.
-5. UI layers are usually disconnected from evidence, making demos lie by omission.
-
-### Root cause fixes (baked into this design)
-- Self-healing is defined as a state machine: detect, contain, rollback, repair, retest, then record the incident and add a new test that would have caught it earlier.
-- Verification is not a label. It is a set of deterministic checks with a strict artifact trail, plus adversarial falsification.
-- “Novelty” is treated as a measurable signal relative to a pinned corpus and a pinned embedding model, but it is never a success criterion without correctness.
-- All strategy changes are versioned artifacts with explicit interfaces, budgets, and kill conditions. No silent prompt mutation.
-- UI must be wired to the same run artifacts as CI. If the UI shows a pass, CI must be able to reproduce it from the run bundle.
-
----
-
 ## Design goals
 - Deterministic replay at the run level: same inputs and seed produce the same trace and artifacts within a defined tolerance boundary.
 - Append-only belief history with tamper evidence.

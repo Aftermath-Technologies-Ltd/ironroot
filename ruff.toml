@@ -26,6 +26,7 @@ ignore = [
     "ARG002",   # unused method arguments (placeholder code)
     "PLW0603",  # global statement (singletons)
     "PLC0415",  # import not at top level (lazy imports)
+    "B008",     # function call in default args (fastapi Depends pattern)
 ]
 
 [lint.isort]
