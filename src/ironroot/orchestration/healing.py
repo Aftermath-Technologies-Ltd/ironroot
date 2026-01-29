@@ -108,9 +108,7 @@ class HealingPipeline:
         restrict_tasks: list[str] | None = None,
     ) -> dict[str, Any]:
         """applies penalties to an agent after an incident."""
-        result = await session.execute(
-            select(AgentRecord).where(AgentRecord.id == agent_id)
-        )
+        result = await session.execute(select(AgentRecord).where(AgentRecord.id == agent_id))
         agent = result.scalar_one_or_none()
 
         if not agent:
@@ -168,9 +166,7 @@ class HealingPipeline:
         # for now, we mark the run for repair
 
         await session.execute(
-            update(RunRecord)
-            .where(RunRecord.id == run_id)
-            .values(phase=RunPhase.REPAIR.value)
+            update(RunRecord).where(RunRecord.id == run_id).values(phase=RunPhase.REPAIR.value)
         )
 
         logger.info(
@@ -274,9 +270,7 @@ class HealingPipeline:
 
     async def _get_run(self, session: AsyncSession, run_id: str) -> RunRecord:
         """fetches run or raises NotFoundError."""
-        result = await session.execute(
-            select(RunRecord).where(RunRecord.id == run_id)
-        )
+        result = await session.execute(select(RunRecord).where(RunRecord.id == run_id))
         run = result.scalar_one_or_none()
         if not run:
             raise NotFoundError("run", run_id)

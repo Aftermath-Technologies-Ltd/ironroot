@@ -1,7 +1,6 @@
 # Author: Bradley R. Kinnard
 """unit tests for self-healing pipeline."""
 
-
 from ironroot.orchestration.incidents import (
     DEFAULT_SEVERITY,
     IncidentType,
@@ -93,9 +92,7 @@ class TestIncidentResolution:
     def test_unresolved_incidents_block_promotion(self) -> None:
         """unresolved incidents should block strategy promotion."""
         incidents_unresolved = [{"id": "inc_001", "resolved_at": None}]
-        incidents_resolved = [
-            {"id": "inc_001", "resolved_at": "2025-01-29T00:00:00"}
-        ]
+        incidents_resolved = [{"id": "inc_001", "resolved_at": "2025-01-29T00:00:00"}]
 
         has_unresolved = any(i["resolved_at"] is None for i in incidents_unresolved)
         all_resolved = all(i["resolved_at"] is not None for i in incidents_resolved)
