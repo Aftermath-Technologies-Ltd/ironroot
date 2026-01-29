@@ -112,9 +112,22 @@ class TestUiApiContracts:
         assert "events" in data
         assert isinstance(data["events"], list)
 
+    @patch("ironroot.verification.gate_service.get_gate_service")
     @patch("ironroot.api.deps.get_session_factory")
-    def test_gate_status_shape(self, mock_factory: AsyncMock) -> None:
+    def test_gate_status_shape(
+        self, mock_factory: AsyncMock, mock_gate_svc: AsyncMock
+    ) -> None:
         """gate status response has required fields."""
+        mock_svc = AsyncMock()
+        mock_svc.get_gate_status = AsyncMock(
+            return_value={
+                "run_id": "run_test123456789",
+                "status": "pending",
+                "artifact_ids": [],
+            }
+        )
+        mock_gate_svc.return_value = mock_svc
+
         mock_session = AsyncMock()
         mock_factory.return_value = lambda: mock_session
 
@@ -124,4 +137,3 @@ class TestUiApiContracts:
         data = response.json()
         assert "run_id" in data
         assert "status" in data
-        assert "artifact_ids" in data

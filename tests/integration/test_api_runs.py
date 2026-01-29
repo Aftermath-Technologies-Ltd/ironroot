@@ -147,9 +147,7 @@ class TestRunsApi:
 
     @patch("ironroot.api.routes.runs.get_run_service")
     @patch("ironroot.api.deps.get_session_factory")
-    def test_run_not_found(
-        self, mock_factory: AsyncMock, mock_service: AsyncMock
-    ) -> None:
+    def test_run_not_found(self, mock_factory: AsyncMock, mock_service: AsyncMock) -> None:
         """GET /runs/{run_id} returns 404 for nonexistent run."""
         mock_svc = AsyncMock()
         mock_svc.get_run = AsyncMock(return_value=None)

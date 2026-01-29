@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.api.deps import RequestIdDep, get_db_session
-from ironroot.domain.ids import generate_id
 from ironroot.orchestration.run_service import get_run_service
 
 router = APIRouter()
@@ -211,9 +210,18 @@ async def execute_gates(
     session: AsyncSession = Depends(get_db_session),
 ) -> dict[str, object]:
     """executes gate suite against run artifacts."""
-    # implemented in phase 4
-    gate_id = generate_id("gat")
-    return {"run_id": run_id, "gate_id": gate_id, "status": "pending", "request_id": request_id}
+    from ironroot.verification.gate_service import get_gate_service
+
+    service = get_gate_service()
+    gate = await service.execute_gates(session, run_id)
+
+    return {
+        "run_id": run_id,
+        "gate_id": gate.id,
+        "status": "passed" if gate.passed else "failed",
+        "artifact_id": gate.artifact_id,
+        "request_id": request_id,
+    }
 
 
 @router.get("/{run_id}/gates/status")
@@ -222,5 +230,8 @@ async def get_gate_status(
     session: AsyncSession = Depends(get_db_session),
 ) -> dict[str, object]:
     """returns gate pass/fail with evidence artifact ids."""
-    # implemented in phase 4
-    return {"run_id": run_id, "status": "pending", "artifact_ids": []}
+    from ironroot.verification.gate_service import get_gate_service
+
+    service = get_gate_service()
+    status = await service.get_gate_status(session, run_id)
+    return status
