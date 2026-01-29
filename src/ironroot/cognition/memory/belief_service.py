@@ -62,9 +62,7 @@ class BeliefService:
 
         return record
 
-    async def _get_latest_hash(
-        self, session: AsyncSession, run_id: str
-    ) -> str | None:
+    async def _get_latest_hash(self, session: AsyncSession, run_id: str) -> str | None:
         """gets the content hash of the most recent belief in this run."""
         result = await session.execute(
             select(BeliefRecord.content_hash)
@@ -75,18 +73,12 @@ class BeliefService:
         row = result.first()
         return row[0] if row else None
 
-    async def get_by_id(
-        self, session: AsyncSession, belief_id: str
-    ) -> BeliefRecord | None:
+    async def get_by_id(self, session: AsyncSession, belief_id: str) -> BeliefRecord | None:
         """fetches a belief by id."""
-        result = await session.execute(
-            select(BeliefRecord).where(BeliefRecord.id == belief_id)
-        )
+        result = await session.execute(select(BeliefRecord).where(BeliefRecord.id == belief_id))
         return result.scalar_one_or_none()
 
-    async def get_by_hash(
-        self, session: AsyncSession, content_hash: str
-    ) -> BeliefRecord | None:
+    async def get_by_hash(self, session: AsyncSession, content_hash: str) -> BeliefRecord | None:
         """fetches a belief by content hash."""
         result = await session.execute(
             select(BeliefRecord).where(BeliefRecord.content_hash == content_hash)
@@ -159,15 +151,11 @@ class BeliefService:
         self, session: AsyncSession, belief_id: str, content: dict[str, object]
     ) -> None:
         """intentionally raises - beliefs are immutable."""
-        raise ImmutabilityViolation(
-            f"beliefs are append-only, cannot update belief {belief_id}"
-        )
+        raise ImmutabilityViolation(f"beliefs are append-only, cannot update belief {belief_id}")
 
     async def delete_belief(self, session: AsyncSession, belief_id: str) -> None:
         """intentionally raises - beliefs are immutable."""
-        raise ImmutabilityViolation(
-            f"beliefs are append-only, cannot delete belief {belief_id}"
-        )
+        raise ImmutabilityViolation(f"beliefs are append-only, cannot delete belief {belief_id}")
 
 
 class ContradictionService:

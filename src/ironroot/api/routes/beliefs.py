@@ -130,9 +130,7 @@ async def list_beliefs(
         for r in records
     ]
 
-    return BeliefListResponse(
-        beliefs=beliefs, offset=offset, limit=limit, total=total
-    )
+    return BeliefListResponse(beliefs=beliefs, offset=offset, limit=limit, total=total)
 
 
 @router.get("/{belief_id}", response_model=BeliefResponse)
@@ -208,9 +206,7 @@ async def get_contradictions(
     ]
 
 
-@router.post(
-    "/{belief_id}/contradictions", response_model=ContradictionResponse, status_code=201
-)
+@router.post("/{belief_id}/contradictions", response_model=ContradictionResponse, status_code=201)
 async def create_contradiction(
     belief_id: str,
     request: ContradictionCreateRequest,
