@@ -1,211 +1,271 @@
 # IRONROOT
 
-An engineering system for evolving agent strategies with hard evidence, auditability, and deterministic replay. Agents earn survival by producing verifiable work. Failures have irreversible consequences.
+> **Irreversible Research Ecology for Robust Agent Evolution**
 
-![Python](https://img.shields.io/badge/Python-3.12+-3776ab?logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169e1?logo=postgresql&logoColor=white)
-![License](https://img.shields.io/badge/License-MIT-green)
-![Tests](https://img.shields.io/badge/Tests-140%20passing-brightgreen)
+<div align="center">
 
-| Category | Tech | Purpose |
-|----------|------|---------|
-| Runtime | Python 3.12+ | Type hints, modern syntax |
-| API | FastAPI | Async endpoints, OpenAPI spec |
-| Database | PostgreSQL | Metadata, run registry, beliefs |
-| Queue | Redis + Celery | Background task execution |
-| Frontend | React + Vite | Evidence-wired UI |
-| Quality | ruff + black + mypy | Zero tolerance for slop |
+![Python](https://img.shields.io/badge/Python-3.12+-3776ab?style=for-the-badge&logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169e1?style=for-the-badge&logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-dc382d?style=for-the-badge&logo=redis&logoColor=white)
+![React](https://img.shields.io/badge/React-61dafb?style=for-the-badge&logo=react&logoColor=black)
+![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
+
+**140 tests passing** · **51%+ coverage** · **Zero tolerance for slop**
+
+</div>
 
 ---
 
-## System Architecture
+## What This Is
+
+A production-grade agent ecosystem that evolves reliable cognitive behaviors under adversarial pressure.
+
+Multi-agent research loops where agents **earn survival** by producing verifiable, reproducible work. Memory is append-only and tamper-evident. Errors have irreversible consequences. Self-healing means detection, containment, rollback, and repair with permanent test additions. Self-evolving means controlled mutation and selection over explicitly versioned strategies.
+
+**This is not a chatbot platform.** It is an engineering system for iterating on cognitive layers and agent strategies with hard evidence, auditability, and deterministic replay.
+
+---
+
+## 📐 Architecture
 
 ```mermaid
 graph TD
-    A[FastAPI Gateway] --> B[Run Orchestration]
-    B --> C[Supervisor State Machine]
-    
-    C --> D[Agent Pool]
-    D --> E[Proposer]
-    D --> F[Builder]
-    D --> G[Tester]
-    D --> H[Verifier]
-    D --> I[Auditor]
-    
-    C --> J[Belief Store]
-    J --> K[(PostgreSQL)]
-    
-    C --> L[Artifact Store]
-    L --> M[(Content-Addressed FS)]
-    
-    C --> N[Verification Gate]
-    N --> O{Pass?}
-    O -->|Yes| P[Strategy Promotion]
-    O -->|No| Q[Containment]
-    Q --> R[Rollback + Repair]
-    R --> N
-    
-    S[React UI] --> A
-    S --> T[WebSocket Events]
-    T --> C
+    subgraph Gateway
+        A[FastAPI API]
+        S[React UI]
+    end
+
+    subgraph Orchestration
+        B[Run Service]
+        C[Supervisor State Machine]
+        K[Kill Switch]
+    end
+
+    subgraph Agents
+        D[Proposer]
+        E[Builder]
+        F[Tester]
+        G[Verifier]
+        H[Auditor]
+        I[Repair]
+    end
+
+    subgraph Storage
+        J[(PostgreSQL)]
+        L[(Artifact Store)]
+    end
+
+    subgraph Verification
+        N[Gate Service]
+        O{Pass?}
+        P[Promote]
+        Q[Contain + Rollback]
+    end
+
+    A --> B
+    S --> A
+    B --> C
+    C --> D & E & F & G & H
+    C --> J
+    C --> L
+    C --> N
+    N --> O
+    O -->|Yes| P
+    O -->|No| Q
+    Q --> I
+    I --> N
+    K -.->|invariant break| Q
 ```
 
 ---
 
-## Core Logic
+## 🔑 Core Invariants
 
-### Orchestration
-
-| Feature | File | What It Does |
-|---------|------|--------------|
-| State Machine | [`orchestration/supervisor.py`](src/ironroot/orchestration/supervisor.py) | Explicit phases: init → propose → build → test → verify → audit → decide |
-| Budget Enforcement | [`orchestration/budgets.py`](src/ironroot/orchestration/budgets.py) | Hard limits on steps, tool calls, memory writes. Exhaustion halts the run. |
-| Kill Switch | [`orchestration/kill_switch.py`](src/ironroot/orchestration/kill_switch.py) | Any invariant break triggers containment |
-| Run Service | [`orchestration/run_service.py`](src/ironroot/orchestration/run_service.py) | CRUD for runs with budget tracking |
-| Self-Healing | [`orchestration/healing.py`](src/ironroot/orchestration/healing.py) | Containment, rollback, repair flow |
-
-### Storage
-
-| Feature | File | What It Does |
-|---------|------|--------------|
-| Artifact Hashing | [`storage/artifacts.py`](src/ironroot/storage/artifacts.py) | SHA256 content addressing, write-once enforcement |
-| Artifact Service | [`storage/artifact_service.py`](src/ironroot/storage/artifact_service.py) | Store/retrieve with integrity verification |
-| Models | [`storage/models.py`](src/ironroot/storage/models.py) | SQLAlchemy ORM for runs, beliefs, agents, incidents, gates |
-
-### Cognition
-
-| Feature | File | What It Does |
-|---------|------|--------------|
-| Append-Only Beliefs | [`cognition/memory/append_only_store.py`](src/ironroot/cognition/memory/append_only_store.py) | Immutable records with hash chain |
-| Belief Service | [`cognition/memory/belief_service.py`](src/ironroot/cognition/memory/belief_service.py) | DB persistence, chain verification |
-| Contradiction Detection | [`cognition/memory/contradiction.py`](src/ironroot/cognition/memory/contradiction.py) | Links conflicting beliefs, never modifies |
-| Strategy Mutation | [`cognition/strategies/mutation.py`](src/ironroot/cognition/strategies/mutation.py) | Bounded changes with provenance tracking |
-| Strategy Service | [`cognition/strategies/strategy_service.py`](src/ironroot/cognition/strategies/strategy_service.py) | Gate-blocked promotion |
-
-### Verification
-
-| Feature | File | What It Does |
-|---------|------|--------------|
-| Gate Service | [`verification/gate_service.py`](src/ironroot/verification/gate_service.py) | Executes replay, integrity, invariant, regression gates |
-| Replay Determinism | [`verification/replay.py`](src/ironroot/verification/replay.py) | Same inputs + seed = equivalent trace digest |
-| Regression Gate | [`verification/regression_gate.py`](src/ironroot/verification/regression_gate.py) | All gates must pass for promotion |
-| Integrity | [`verification/integrity.py`](src/ironroot/verification/integrity.py) | Stored bytes hash equals recorded hash |
-
-### Agents
-
-| Role | File | Scope |
-|------|------|-------|
-| Base | [`agents/base.py`](src/ironroot/agents/base.py) | Budgets, penalties, tool access |
-| Proposer | [`agents/proposer.py`](src/ironroot/agents/proposer.py) | Proposes cognitive layer changes |
-| Builder | [`agents/builder.py`](src/ironroot/agents/builder.py) | Implements under stable contracts |
-| Tester | [`agents/tester.py`](src/ironroot/agents/tester.py) | Writes tests against claims |
-| Verifier | [`agents/verifier.py`](src/ironroot/agents/verifier.py) | Attempts falsification |
-| Auditor | [`agents/auditor.py`](src/ironroot/agents/auditor.py) | Trace integrity, policy compliance |
-| Repair | [`agents/repair.py`](src/ironroot/agents/repair.py) | Minimal diff + mandatory new test |
+| Invariant | Enforcement | Proof |
+|-----------|-------------|-------|
+| **Beliefs are immutable** | No UPDATE endpoint, hash chain verification | [`append_only_store.py`](src/ironroot/cognition/memory/append_only_store.py) |
+| **Artifacts are content-addressed** | SHA256 paths, write-once semantics | [`artifacts.py`](src/ironroot/storage/artifacts.py) |
+| **Budgets are hard limits** | Exhaustion halts execution, no silent overruns | [`budgets.py`](src/ironroot/orchestration/budgets.py) |
+| **Promotion requires gate pass** | Strategy cannot promote without passing all gates | [`strategy_service.py`](src/ironroot/cognition/strategies/strategy_service.py) |
+| **Failures trigger containment** | Kill switch freezes commits on invariant break | [`kill_switch.py`](src/ironroot/orchestration/kill_switch.py) |
 
 ---
 
-## Installation
+## 📦 Module Map
+
+<details>
+<summary><strong>🎛️ Orchestration</strong> — Run lifecycle, budgets, self-healing</summary>
+
+| Module | Purpose |
+|--------|---------|
+| [`supervisor.py`](src/ironroot/orchestration/supervisor.py) | State machine: init → propose → build → test → verify → audit → decide |
+| [`budgets.py`](src/ironroot/orchestration/budgets.py) | Hard limits on steps, tool calls, memory writes |
+| [`kill_switch.py`](src/ironroot/orchestration/kill_switch.py) | Invariant break triggers containment |
+| [`run_service.py`](src/ironroot/orchestration/run_service.py) | CRUD for runs with budget tracking |
+| [`healing.py`](src/ironroot/orchestration/healing.py) | Containment → rollback → repair → retest flow |
+| [`incidents.py`](src/ironroot/orchestration/incidents.py) | Incident types and severity mapping |
+
+</details>
+
+<details>
+<summary><strong>💾 Storage</strong> — Content-addressed artifacts, models</summary>
+
+| Module | Purpose |
+|--------|---------|
+| [`artifacts.py`](src/ironroot/storage/artifacts.py) | SHA256 hashing, write-once enforcement |
+| [`artifact_service.py`](src/ironroot/storage/artifact_service.py) | Store/retrieve with integrity verification |
+| [`models.py`](src/ironroot/storage/models.py) | SQLAlchemy ORM: runs, beliefs, agents, incidents, gates, strategies |
+| [`postgres.py`](src/ironroot/storage/postgres.py) | Session factory and base model |
+
+</details>
+
+<details>
+<summary><strong>🧠 Cognition</strong> — Beliefs, strategies, memory</summary>
+
+| Module | Purpose |
+|--------|---------|
+| [`append_only_store.py`](src/ironroot/cognition/memory/append_only_store.py) | Immutable belief records with hash chain |
+| [`belief_service.py`](src/ironroot/cognition/memory/belief_service.py) | DB persistence, chain verification |
+| [`contradiction.py`](src/ironroot/cognition/memory/contradiction.py) | Links conflicting beliefs as new events |
+| [`mutation.py`](src/ironroot/cognition/strategies/mutation.py) | Bounded strategy changes with provenance |
+| [`strategy_service.py`](src/ironroot/cognition/strategies/strategy_service.py) | Gate-blocked promotion, multi-objective scoring |
+| [`registry.py`](src/ironroot/cognition/strategies/registry.py) | In-memory strategy version management |
+
+</details>
+
+<details>
+<summary><strong>✅ Verification</strong> — Gates, replay, integrity</summary>
+
+| Module | Purpose |
+|--------|---------|
+| [`gate_service.py`](src/ironroot/verification/gate_service.py) | Executes replay, integrity, invariant, regression gates |
+| [`replay.py`](src/ironroot/verification/replay.py) | Same inputs + seed = equivalent trace digest |
+| [`regression_gate.py`](src/ironroot/verification/regression_gate.py) | All gates must pass for promotion |
+| [`integrity.py`](src/ironroot/verification/integrity.py) | Stored bytes hash equals recorded hash |
+
+</details>
+
+<details>
+<summary><strong>🤖 Agents</strong> — Specialized workers with budgets</summary>
+
+| Agent | Scope |
+|-------|-------|
+| [`base.py`](src/ironroot/agents/base.py) | Budgets, penalties, tool access |
+| [`proposer.py`](src/ironroot/agents/proposer.py) | Proposes cognitive layer changes |
+| [`builder.py`](src/ironroot/agents/builder.py) | Implements under stable contracts |
+| [`tester.py`](src/ironroot/agents/tester.py) | Writes tests against claims |
+| [`verifier.py`](src/ironroot/agents/verifier.py) | Attempts falsification |
+| [`auditor.py`](src/ironroot/agents/auditor.py) | Trace integrity, policy compliance |
+| [`repair.py`](src/ironroot/agents/repair.py) | Minimal diff + mandatory new test |
+
+</details>
+
+---
+
+## 🚀 Quick Start
 
 ```bash
-# clone
+# Clone
 git clone https://github.com/moonrunnerkc/ironroot.git && cd ironroot
 
-# venv with python 3.12+
+# Python 3.12+ virtual environment
 python3.12 -m venv .venv && source .venv/bin/activate
 
-# install with dev deps (pytest, ruff, black, mypy)
+# Install with dev dependencies
 pip install -e ".[dev]"
 
-# copy env template
+# Environment config
 cp .env.example .env
 
-# start postgres + redis
+# Start infrastructure (postgres + redis)
 ./scripts/dev_up.sh
 
-# run migrations
+# Run migrations
 alembic upgrade head
 
-# verify: 140 tests, 50%+ coverage
+# Verify: 140 tests, 50%+ coverage
 pytest -q --cov=src/ironroot --cov-fail-under=50
 
-# start api
+# Start API server
 ./scripts/run_once.sh
 ```
 
 ---
 
-## Skeptic's Corner
+## 🔌 API Reference
+
+Base: `/api/v1`
+
+| Endpoint | Method | Purpose |
+|:---------|:------:|:--------|
+| `/health` | `GET` | DB, queue, store connectivity |
+| `/runs` | `POST` | Create run with seed, budgets, gates |
+| `/runs/{id}` | `GET` | Status, phase, budgets, failures |
+| `/runs/{id}/start` | `POST` | Start orchestration |
+| `/runs/{id}/stop` | `POST` | Hard stop, freeze commits |
+| `/runs/{id}/gates/execute` | `POST` | Execute gate suite |
+| `/runs/{id}/gates/status` | `GET` | Pass/fail with artifact evidence |
+| `/artifacts/{id}` | `GET` | Metadata + download |
+| `/beliefs` | `GET` | List with filters |
+| `/beliefs/{id}/contradictions` | `GET` | Linked contradiction events |
+| `/strategies` | `GET` `POST` | List or register |
+| `/strategies/{id}/promote` | `POST` | Promote if gate passed |
+
+---
+
+## 🧪 Testing
+
+```bash
+pytest tests/unit -v              # Unit tests
+pytest tests/integration -v       # Requires postgres/redis
+pytest tests/e2e -v               # Full research cycle
+pytest --cov=src/ironroot         # Coverage report
+```
+
+---
+
+## ❓ Skeptic's Corner
 
 <details>
-<summary><strong>Why append-only beliefs instead of mutable state?</strong></summary>
+<summary><strong>Why append-only beliefs?</strong></summary>
 
-Mutable state hides history. The [`append_only_store.py`](src/ironroot/cognition/memory/append_only_store.py) enforces immutability at DB and API layers. Contradictions are new events, not updates. Hash chains make drift detection trivial: break the chain, break the invariant.
+Mutable state hides history. [`append_only_store.py`](src/ironroot/cognition/memory/append_only_store.py) enforces immutability at DB and API layers. Contradictions are new events, not updates. Hash chains make drift detection trivial: break the chain, break the invariant.
 
 </details>
 
 <details>
 <summary><strong>Why content-addressed artifacts?</strong></summary>
 
-UUIDs require trust in the registry. SHA256 requires trust in math. The [`artifacts.py`](src/ironroot/storage/artifacts.py) store uses hash paths. Write-once means same content = same path. Integrity check is O(1): hash bytes, compare to path.
+UUIDs require trust in the registry. SHA256 requires trust in math. [`artifacts.py`](src/ironroot/storage/artifacts.py) uses hash paths. Write-once means same content = same path. Integrity check is O(1): hash bytes, compare to path.
 
 </details>
 
 <details>
 <summary><strong>Why explicit state machines?</strong></summary>
 
-Implicit flow hides control. The [`supervisor.py`](src/ironroot/orchestration/supervisor.py) makes every transition explicit with entry/exit conditions. Kill switch can halt at any transition. Replay is deterministic: same inputs, same path.
+Implicit flow hides control. [`supervisor.py`](src/ironroot/orchestration/supervisor.py) makes every transition explicit with entry/exit conditions. Kill switch can halt at any transition. Replay is deterministic: same inputs, same path.
 
 </details>
 
 <details>
 <summary><strong>Why adversarial verification?</strong></summary>
 
-Self-grading is a conflict of interest. The [`verifier.py`](src/ironroot/agents/verifier.py) attempts falsification. The [`auditor.py`](src/ironroot/agents/auditor.py) checks trace integrity. Neither has stake in proposals succeeding. The [`regression_gate.py`](src/ironroot/verification/regression_gate.py) enforces this: no promotion without passing adversarial tests.
+Self-grading is a conflict of interest. [`verifier.py`](src/ironroot/agents/verifier.py) attempts falsification. [`auditor.py`](src/ironroot/agents/auditor.py) checks trace integrity. Neither has stake in proposals succeeding. [`regression_gate.py`](src/ironroot/verification/regression_gate.py) enforces: no promotion without adversarial tests.
 
 </details>
 
 <details>
 <summary><strong>Why irreversible penalties?</strong></summary>
 
-Resets teach agents that failure is free. The [`budgets.py`](src/ironroot/orchestration/budgets.py) tracks lifetime budgets that decrease on failure. Tool revocations and task restrictions never reset. This selects for calibrated agents. Overconfident agents burn budgets and die.
+Resets teach agents that failure is free. [`budgets.py`](src/ironroot/orchestration/budgets.py) tracks lifetime budgets that decrease on failure. Tool revocations never reset. This selects for calibrated agents. Overconfident agents burn budgets and die.
 
 </details>
 
 ---
 
-## API
+<div align="center">
 
-Base: `/api/v1`
+**MIT License** · Built for skeptical engineers
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/health` | GET | DB, queue, store connectivity |
-| `/runs` | POST | Create run with seed, budgets, gates |
-| `/runs/{id}/start` | POST | Start orchestration |
-| `/runs/{id}` | GET | Status, phase, budgets, failures |
-| `/runs/{id}/stop` | POST | Hard stop, freeze commits |
-| `/runs/{id}/gates/execute` | POST | Execute gate suite |
-| `/runs/{id}/gates/status` | GET | Pass/fail with artifact evidence |
-| `/artifacts/{id}` | GET | Metadata + download |
-| `/beliefs` | GET | List with filters |
-| `/strategies` | GET/POST | List or register |
-| `/strategies/{id}/promote` | POST | Promote if gate passed |
-
----
-
-## Testing
-
-```bash
-pytest tests/unit -v              # unit tests
-pytest tests/integration -v       # needs postgres/redis
-pytest tests/e2e -v               # full research cycle
-pytest --cov=src/ironroot         # coverage report
-```
-
----
-
-## License
-
-MIT
+</div>
