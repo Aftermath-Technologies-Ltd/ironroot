@@ -1,0 +1,37 @@
+# Author: Bradley R. Kinnard
+line-length = 99
+target-version = "py312"
+
+[lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+    "ARG",    # flake8-unused-arguments
+    "SIM",    # flake8-simplify
+    "TCH",    # flake8-type-checking
+    "PTH",    # flake8-use-pathlib
+    "ERA",    # eradicate commented-out code
+    "PL",     # pylint
+    "RUF",    # ruff-specific
+]
+ignore = [
+    "PLR0913",  # too many arguments
+    "PLR2004",  # magic value comparison
+    "ARG001",   # unused function arguments (placeholder code)
+    "ARG002",   # unused method arguments (placeholder code)
+    "PLW0603",  # global statement (singletons)
+    "PLC0415",  # import not at top level (lazy imports)
+]
+
+[lint.isort]
+known-first-party = ["ironroot"]
+force-single-line = false
+combine-as-imports = true
+
+[lint.per-file-ignores]
+"tests/*" = ["ARG", "PLR2004"]

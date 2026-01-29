@@ -1,0 +1,67 @@
+# Author: Bradley R. Kinnard
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ironroot
+      POSTGRES_USER: ironroot
+      POSTGRES_PASSWORD: changeme
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ironroot"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      IRONROOT_DB_HOST: postgres
+      IRONROOT_REDIS_HOST: redis
+      IRONROOT_ARTIFACT_PATH: /app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./artifacts:/app/artifacts
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: celery -A ironroot.orchestration.queue worker --loglevel=info
+    environment:
+      IRONROOT_DB_HOST: postgres
+      IRONROOT_REDIS_HOST: redis
+      IRONROOT_ARTIFACT_PATH: /app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./artifacts:/app/artifacts
+
+volumes:
+  postgres_data:
