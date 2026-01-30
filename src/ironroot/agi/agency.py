@@ -685,31 +685,81 @@ class AgencySuite:
     def _simulate_agent_action(
         self, env: LongHorizonEnvironment, obs: Observation, step: int
     ) -> Action:
-        """Simulate agent action (placeholder for real agent)."""
+        """Simulate agent action with simple heuristics (better than random)."""
         if isinstance(env, NavigationEnvironment):
-            direction = self.rng.choice(["up", "down", "left", "right", "stay"])
+            # Simple greedy: move toward less visited areas, prefer non-obstacles
+            visible = obs.visible_state.get("visible_cells", {})
+            pos = obs.visible_state.get("agent_position", (0, 0))
+
+            # Check for goal in visible cells
+            for cell_key, cell_val in visible.items():
+                if cell_val == "goal":
+                    # Move toward goal
+                    gx, gy = map(int, cell_key.split(","))
+                    if gx > pos[0]:
+                        direction = "right"
+                    elif gx < pos[0]:
+                        direction = "left"
+                    elif gy > pos[1]:
+                        direction = "down"
+                    else:
+                        direction = "up"
+                    return Action(
+                        step=step,
+                        action_type="move",
+                        parameters={"direction": direction},
+                        rationale="Moving toward visible goal",
+                    )
+
+            # Otherwise explore (biased random walk)
+            direction = self.rng.choice(["up", "down", "left", "right"])
             return Action(
                 step=step,
                 action_type="move",
                 parameters={"direction": direction},
-                rationale=f"Exploring toward goal",
+                rationale="Exploring toward goal",
             )
         elif isinstance(env, ResourceManagementEnvironment):
-            action_type = self.rng.choice(["produce", "sell", "buy_materials", "hire_worker", "wait"])
+            # Simple strategy: produce when materials available, sell when stock high
+            state = obs.visible_state
+            if state.get("materials", 0) > 10 and state.get("energy", 0) > 30:
+                action_type = "produce"
+            elif state.get("total_produced", 0) > 5:
+                action_type = "sell"
+            elif state.get("money", 0) > 200 and state.get("materials", 0) < 20:
+                action_type = "buy_materials"
+            else:
+                action_type = self.rng.choice(["produce", "sell", "wait"])
             return Action(
                 step=step,
                 action_type=action_type,
                 parameters={"type": action_type},
-                rationale=f"Managing resources",
+                rationale="Managing resources strategically",
             )
         elif isinstance(env, RepairTaskEnvironment):
-            action_type = self.rng.choice(["diagnose", "repair", "wait"])
-            component = self.rng.choice(["power", "cooling", "compute", "network", "storage"])
+            # Strategy: diagnose first, then repair diagnosed broken components
+            state = obs.visible_state
+            diagnosed = state.get("diagnosed_components", {})
+            undiagnosed = state.get("undiagnosed_count", 5)
+
+            # Find broken components we know about
+            broken = [c for c, status in diagnosed.items() if not status]
+
+            if broken:
+                component = broken[0]
+                action_type = "repair"
+            elif undiagnosed > 0:
+                action_type = "diagnose"
+                component = self.rng.choice(["power", "cooling", "compute", "network", "storage"])
+            else:
+                action_type = "wait"
+                component = None
+
             return Action(
                 step=step,
                 action_type=action_type,
                 parameters={"type": action_type, "component": component},
-                rationale=f"Attempting to fix {component}",
+                rationale=f"{'Repairing' if action_type == 'repair' else 'Diagnosing'} {component}",
             )
         else:
             return Action(step=step, action_type="wait", parameters={}, rationale="Default")
