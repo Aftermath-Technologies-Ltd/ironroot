@@ -45,6 +45,10 @@ class InvariantType(str, Enum):
     REPLAY = "replay"  # non-deterministic replay
     ARTIFACT = "artifact"  # corrupted artifact
     BELIEF = "belief"  # contradicted belief
+    ARTIFACT_TAMPER = "artifact_tamper"  # artifact content modified
+    MISSING_ARTIFACT = "missing_artifact"  # referenced artifact not found
+    NONDETERMINISM = "nondeterminism"  # replay divergence
+    VERIFIER_CORRUPTION = "verifier_corruption"  # invalid verifier attestation
 
 
 @dataclass
