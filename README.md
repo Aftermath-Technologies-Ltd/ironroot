@@ -323,6 +323,178 @@ This proves predictions were locked before reality was observed, and reality cam
 
 ---
 
+## 🧱 Capability Layers
+
+Five infrastructure layers for testing agent capabilities against external evidence. No claims of intelligence - just measurable, falsifiable behaviors.
+
+### Layer 1: Multi-Domain Reality Sources
+
+Nine reality sources spanning different data types:
+
+| Source Type | Examples | What Gets Tested |
+|-------------|----------|------------------|
+| **Tabular** | `tabular_wine`, `tabular_iris` | Holdout predictions on structured data |
+| **Time Series** | `timeseries_walk` | Future value forecasting |
+| **Simulator** | `simulator_pendulum`, `simulator_spring` | Hidden parameter inference from observations |
+| **Delayed** | `delayed_treatment`, `delayed_investment` | Prediction before outcomes are revealed |
+| **Adversarial** | `adversarial_shift`, `adversarial_noise` | Robustness to distribution changes |
+
+**Metrics:**
+- `cross_domain_survival_rate` — fraction of domains where predictions held
+- `distribution_shift_failure_rate` — failures under adversarial conditions
+- `calibration_error` — confidence vs actual accuracy gap
+
+```bash
+# List available reality domains
+GET /api/v1/agi/domains
+
+# Run cross-domain test
+POST /api/v1/agi/cross-domain
+```
+
+### Layer 2: World Model Registry
+
+First-class storage for causal/counterfactual models. Models are artifacts with provenance tracking.
+
+| Component | Purpose |
+|-----------|---------|
+| `WorldModelSpec` | Structure, training data hash, version |
+| `CounterfactualQuery` | What-if queries with expected outcomes |
+| `EvaluationReport` | Accuracy on counterfactual test suite |
+
+**Metrics:**
+- `counterfactual_accuracy` — correct answers on what-if queries
+- `intervention_success_rate` — do() operations work as expected
+- `causal_consistency_score` — model respects causal structure
+
+```bash
+# Register a world model
+POST /api/v1/agi/world-model
+
+# Query counterfactual
+POST /api/v1/agi/world-model/counterfactual
+```
+
+### Layer 3: Capability Registry
+
+Structured curriculum of 10 capabilities with explicit test protocols:
+
+| Level | Capabilities |
+|-------|--------------|
+| **Basic (1)** | Prediction Locking |
+| **Intermediate (2)** | Cross-Domain Transfer, Counterfactual Reasoning, Distribution Shift Detection |
+| **Advanced (3)** | Calibrated Uncertainty, Planning with Model, Self-Correction |
+| **Expert (4)** | Adversarial Robustness, Multi-Step Reasoning |
+| **Master (5)** | Continual Learning |
+
+Each capability specifies:
+- **Definition**: What exactly is being tested
+- **Test Protocol**: How to measure success
+- **Failure Modes**: Known ways to fail
+- **Evidence Artifacts**: Required proof of capability
+- **Promotion Threshold**: Metric value required to pass
+
+**Metrics:**
+- `capability_pass_rate_by_level` — pass rate for each difficulty level
+- `sample_efficiency` — capabilities passed per sample
+- `transfer_gain` — speed improvement on new domains
+
+```bash
+# List all capabilities and status
+GET /api/v1/agi/capabilities
+
+# Record a capability attempt
+POST /api/v1/agi/capabilities/attempt
+```
+
+### Layer 4: Strategy Evolution Gate
+
+Strategies evolve only through strict external promotion rules. No self-improvement claims - just verified incremental changes.
+
+**Promotion Rules (all must pass):**
+1. All verification gates passed
+2. Effect size ≥ 5% improvement on primary metrics
+3. No regression > 2% on baseline suite
+4. ≥ 80% of adversarial tests passed
+
+**Metrics:**
+- `effect_size` — magnitude of improvement
+- `statistical_significance` — confidence the improvement is real
+- `regression_rate_on_baseline_suite` — degradation on established tests
+
+```bash
+# Register baseline metric
+POST /api/v1/agi/evolution/baseline?metric_name=accuracy&value=0.8
+
+# Evaluate strategy for promotion
+POST /api/v1/agi/evolution/evaluate
+```
+
+### Layer 5: Self-Healing Restoration
+
+When invariants break, the system must restore correctness and prevent recurrence.
+
+**Restoration Process:**
+1. Detect violation type (hash_chain, budget, phase, replay, artifact, belief)
+2. Apply restoration strategy (rollback, recompute, repair)
+3. Verify invariants restored
+4. Verify replay gate passes
+5. Add regression test
+6. Check recurrence over 10 runs
+
+**Metrics:**
+- `time_to_invariant_restoration_ms` — how fast correctness returns
+- `repair_success_rate_over_trials` — reliability of repair
+- `recurrence_rate_over_10_runs` — does the problem come back?
+
+```bash
+# Report a violation
+POST /api/v1/agi/healing/violation
+
+# Attempt restoration
+POST /api/v1/agi/healing/restore/{violation_id}
+```
+
+### External Task Battery
+
+50 held-out tasks for external evaluation. Tasks are generated from seeds and scored automatically.
+
+| Domain | Task Types |
+|--------|------------|
+| **Prediction** | Sequence continuation (easy/medium/hard) |
+| **Reasoning** | Logical inference from premises |
+| **Planning** | Grid navigation, action sequencing |
+| **Calibration** | Probability estimation from samples |
+
+**Promotion Threshold:** 50% overall score required
+
+All task inputs and ground truths are hashed. Results include provenance for audit.
+
+```bash
+# Run the task battery
+POST /api/v1/agi/battery/evaluate
+{
+  "strategy_id": "my_strategy",
+  "seed": 42
+}
+
+# Example response:
+{
+  "tasks_run": 50,
+  "tasks_correct": 27,
+  "overall_score": 0.62,
+  "score_by_domain": {
+    "prediction": 0.86,
+    "reasoning": 0.0,
+    "planning": 1.0,
+    "calibration": 0.82
+  },
+  "meets_promotion_threshold": true
+}
+```
+
+---
+
 <div align="center">
 
 **MIT License** · Built for skeptical engineers
