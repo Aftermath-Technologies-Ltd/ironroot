@@ -497,7 +497,7 @@ POST /api/v1/agi/battery/evaluate
 
 <div align="center">
 
-**MIT License** · Built for skeptical engineers
+**MIT License** · Built for researchers, by researchers
 
 </div>
 
