@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from ironroot.api.routes import (
     agents,
+    agi,
     artifacts,
     beliefs,
     health,
@@ -26,3 +27,4 @@ api_router.include_router(agents.router, prefix="/agents", tags=["agents"])
 api_router.include_router(tests.router, prefix="/tests", tags=["tests"])
 api_router.include_router(ui.router, prefix="/ui", tags=["ui"])
 api_router.include_router(reality.router, prefix="/reality", tags=["reality"])
+api_router.include_router(agi.router, tags=["agi"])
