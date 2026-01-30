@@ -34,6 +34,18 @@ class GateService:
         if not run:
             raise NotFoundError("run", run_id)
 
+        # reject gate execution on idle runs - no activity = no meaningful validation
+        has_activity = (
+            run.steps_used > 0 or run.tool_calls_used > 0 or run.belief_writes_used > 0
+        )
+        if not has_activity:
+            raise ValueError(
+                f"cannot execute gates on idle run {run_id}: "
+                f"steps_used={run.steps_used}, tool_calls_used={run.tool_calls_used}, "
+                f"belief_writes_used={run.belief_writes_used}. "
+                "Run must have activity before gate validation is meaningful."
+            )
+
         results: dict[str, Any] = {
             "gates": {},
             "overall": "passed",

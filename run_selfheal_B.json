@@ -1,0 +1,21 @@
+{
+  "seed": 13371337,
+  "budgets": {
+    "max_steps": 100,
+    "max_tool_calls": 200,
+    "max_belief_writes": 60
+  },
+  "fault_injection": {
+    "enabled": true,
+    "scenario_id": "simple_invariant",
+    "trigger_phase": "test",
+    "trigger_condition": "always",
+    "expected_signature": "content_hash_mismatch"
+  },
+  "gates": {
+    "integrity": true,
+    "invariants": true,
+    "regression": true,
+    "replay": true
+  }
+}

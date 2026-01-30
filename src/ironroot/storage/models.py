@@ -77,6 +77,9 @@ class BeliefRecord(Base):
         String(64), ForeignKey("runs.id"), nullable=False, index=True
     )
     agent_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    belief_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="lifecycle", index=True
+    )  # lifecycle, observation, hypothesis
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     parent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     content: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)

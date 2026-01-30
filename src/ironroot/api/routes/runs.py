@@ -30,12 +30,23 @@ class GatesConfig(BaseModel):
     regression_required: bool = Field(default=True)
 
 
+class FaultInjectionConfig(BaseModel):
+    """fault injection configuration for self-healing tests."""
+
+    enabled: bool = Field(default=False)
+    scenario_id: str = Field(default="none")
+    trigger_phase: str = Field(default="test")
+    trigger_condition: str = Field(default="always")
+    expected_signature: str = Field(default="")
+
+
 class RunConfig(BaseModel):
     """configuration for a new run."""
 
     seed: int = Field(..., description="deterministic seed for replay")
     budgets: BudgetsConfig = Field(default_factory=BudgetsConfig)
     gates: GatesConfig = Field(default_factory=GatesConfig)
+    fault_injection: FaultInjectionConfig = Field(default_factory=FaultInjectionConfig)
 
 
 class RunCreateResponse(BaseModel):
@@ -83,6 +94,7 @@ async def create_run(
     full_config: dict[str, Any] = {
         "budgets": config.budgets.model_dump(),
         "gates": config.gates.model_dump(),
+        "fault_injection": config.fault_injection.model_dump(),
     }
 
     record = await service.create_run(session, seed=config.seed, config=full_config)
@@ -138,6 +150,32 @@ async def start_run(
         raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
 
     return {"run_id": run_id, "status": "started", "phase": record.phase, "request_id": request_id}
+
+
+@router.post("/{run_id}/execute")
+async def execute_run(
+    run_id: str,
+    request_id: RequestIdDep,
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, Any]:
+    """executes a run through all phases synchronously. Use for testing."""
+    from ironroot.orchestration.executor import get_executor
+
+    service = get_run_service()
+    record = await service.get_run(session, run_id)
+
+    if not record:
+        raise HTTPException(status_code=404, detail=f"run not found: {run_id}")
+
+    # must be started first - this transitions to PROPOSE
+    if record.status == "pending":
+        await service.start_run(session, run_id)
+        await session.commit()  # commit to ensure executor sees updated phase
+
+    executor = get_executor()
+    result = await executor.execute(session, run_id)
+    result["request_id"] = request_id
+    return result
 
 
 @router.get("/{run_id}", response_model=RunStatus)
@@ -213,7 +251,10 @@ async def execute_gates(
     from ironroot.verification.gate_service import get_gate_service
 
     service = get_gate_service()
-    gate = await service.execute_gates(session, run_id)
+    try:
+        gate = await service.execute_gates(session, run_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     return {
         "run_id": run_id,

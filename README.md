@@ -268,8 +268,64 @@ If agents can just retry after failing, they learn that failure is cheap. The [`
 
 ---
 
+## 🔬 Reality Interface Layer (RIL)
+
+The gate between IRONROOT and external truth. This allows beliefs to be wrong because of reality, not because of logic or simulation.
+
+### What It Does
+
+1. **External Reality Sources**: Connects to real external data (UCI Wine Quality dataset with hidden holdout)
+2. **Prediction Locking**: Agents commit to predictions BEFORE seeing reality data
+3. **Automatic Contradiction**: Math compares predictions vs observations - no agent discretion
+4. **Penalty Application**: Wrong predictions incur penalties proportional to error magnitude
+5. **Cross-Run Survival**: Track which predictions survive repeated falsification
+
+### API Endpoints
+
+```bash
+# Run prediction-locked falsification test
+POST /api/v1/reality/falsification
+{
+  "source_seed": 42,
+  "predictions": [
+    {"metric_name": "mean_quality", "lower": 5.4, "upper": 5.8, "rationale": "..."},
+    {"metric_name": "std_quality", "lower": 0.7, "upper": 1.0, "rationale": "..."}
+  ]
+}
+
+# Get detailed results
+GET /api/v1/reality/falsification/{run_id}
+
+# Get cross-run survival stats
+GET /api/v1/reality/survival/{source_id}
+```
+
+### Example: Prediction vs Reality
+
+| Metric | Predicted Range | Observed | Confirmed | Penalty |
+|--------|-----------------|----------|-----------|---------|
+| mean_quality | [5.40, 5.80] | 5.7147 | ✅ | 0.00 |
+| std_quality | [0.70, 1.00] | 0.8146 | ✅ | 0.00 |
+| correlation_alcohol_quality | [0.30, 0.60] | 0.4077 | ✅ | 0.00 |
+| high_quality_fraction | [0.10, 0.25] | 0.1661 | ✅ | 0.00 |
+
+### Provenance Proof
+
+```json
+{
+  "source_type": "dataset_holdout",
+  "acquisition_method": "HTTP GET from UCI ML Repository + holdout split",
+  "data_hash": "4a402cf041b025d4566d954c3b9ba8635a3a8a01e039005d97d6a710278cf05e"
+}
+```
+
+This proves predictions were locked before reality was observed, and reality came from an external source that could not be influenced by agents.
+
+---
+
 <div align="center">
 
 **MIT License** · Built for skeptical engineers
 
 </div>
+

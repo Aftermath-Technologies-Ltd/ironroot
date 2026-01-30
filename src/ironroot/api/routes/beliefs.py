@@ -25,6 +25,7 @@ class BeliefResponse(BaseModel):
     parent_hash: str | None
     agent_id: str
     run_id: str
+    belief_type: str = "lifecycle"  # lifecycle, observation, hypothesis
     content: dict[str, Any]
     confidence: float
     created_at: str
@@ -121,6 +122,7 @@ async def list_beliefs(
             parent_hash=r.parent_hash,
             agent_id=r.agent_id,
             run_id=r.run_id,
+            belief_type=getattr(r, "belief_type", "lifecycle"),
             content=r.content,
             confidence=r.confidence,
             created_at=r.created_at.isoformat(),
@@ -151,6 +153,7 @@ async def get_belief(
         parent_hash=record.parent_hash,
         agent_id=record.agent_id,
         run_id=record.run_id,
+        belief_type=getattr(record, "belief_type", "lifecycle"),
         content=record.content,
         confidence=record.confidence,
         created_at=record.created_at.isoformat(),
