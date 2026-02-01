@@ -229,14 +229,14 @@ async def _run_research(session: AsyncSession, research_id: str) -> None:
             "parsing",
             eta_seconds=110,
         )
-        
+
         # Import semantic parser
         from ironroot.research.semantic import extract_topics, generate_questions, generate_hypotheses, get_relevant_data_sources
         from ironroot.research.data_sources import TopicDataSources
-        
+
         # Extract topics from user's criteria
         topic_extraction = extract_topics(job.criteria)
-        
+
         await asyncio.sleep(0.2)
 
         # Phase 2: Generate contextually relevant questions
@@ -249,10 +249,10 @@ async def _run_research(session: AsyncSession, research_id: str) -> None:
             eta_seconds=90,
             completed_phase="parsing",
         )
-        
+
         # Generate topic-relevant questions
         questions = generate_questions(topic_extraction, max_questions=5)
-        
+
         await asyncio.sleep(0.2)
 
         from ironroot.storage.postgres import get_session
@@ -404,10 +404,10 @@ async def _run_semantic_campaign(
     """Run semantically-aware research campaign."""
     from ironroot.research.semantic import generate_hypotheses, get_relevant_data_sources
     from ironroot.research.data_sources import TopicDataSources
-    
+
     started_at = datetime.now(timezone.utc).isoformat()
     rng = random.Random(seed)
-    
+
     # Update progress: questions generated
     _update_progress(
         research_id,
@@ -419,12 +419,12 @@ async def _run_semantic_campaign(
         completed_phase="questions",
         details={"questions_generated": len(questions)},
     )
-    
+
     # Generate hypotheses based on topics
     hypotheses = generate_hypotheses(topic_extraction, questions, max_hypotheses=10)
-    
+
     await asyncio.sleep(0.2)
-    
+
     # Update progress: hypotheses formed
     _update_progress(
         research_id,
@@ -436,16 +436,16 @@ async def _run_semantic_campaign(
         completed_phase="hypotheses",
         details={"hypotheses_formed": len(hypotheses)},
     )
-    
+
     # Get relevant data sources
     data_sources = get_relevant_data_sources(topic_extraction)
     topic_label = " ".join(topic_extraction.keywords[:3]) if topic_extraction.keywords else "topic"
-    
+
     # Query data sources
     data_source_client = TopicDataSources(seed=seed)
     data_queries = []
     total_bytes = 0
-    
+
     for source in data_sources:
         result = data_source_client.query(source["source_id"], topic_label)
         data_queries.append({
@@ -458,9 +458,9 @@ async def _run_semantic_campaign(
             "data": result.data,
         })
         total_bytes += len(str(result.data))
-    
+
     await asyncio.sleep(0.2)
-    
+
     # Update progress: data gathered
     _update_progress(
         research_id,
@@ -475,36 +475,36 @@ async def _run_semantic_campaign(
             "data_sources": len(data_sources),
         },
     )
-    
+
     # Run simulated experiments
     experiments = []
     supported_count = 0
     falsified_count = 0
     revised_count = 0
-    
+
     # Test subset of hypotheses
     for i, hyp in enumerate(hypotheses[:5]):
         tests_run = []
         significant_count = 0
-        
+
         # Run 2-4 statistical tests per hypothesis
         test_count = rng.randint(2, 4)
         test_types = ["correlation_analysis", "regression_test", "significance_test", "effect_size"]
-        
+
         for test_type in rng.sample(test_types, min(test_count, len(test_types))):
             p_value = rng.uniform(0.01, 0.15)
             effect_size = rng.uniform(0.2, 0.8)
             is_significant = p_value < 0.05
             if is_significant:
                 significant_count += 1
-            
+
             tests_run.append({
                 "test": test_type,
                 "p_value": round(p_value, 4),
                 "effect_size": round(effect_size, 4),
                 "significant": is_significant,
             })
-        
+
         # Determine outcome
         if significant_count >= len(tests_run) / 2:
             conclusion = "supported"
@@ -521,19 +521,19 @@ async def _run_semantic_campaign(
             revised_count += 1
             hyp["status"] = "revised"
             hyp["posterior"] = hyp["prior_probability"]
-        
+
         experiments.append({
             "hypothesis": hyp["statement"],
             "conclusion": conclusion,
             "confidence": round(rng.uniform(0.85, 0.98), 3),
             "tests": tests_run,
         })
-    
+
     await asyncio.sleep(0.2)
-    
+
     # Calculate testability
     avg_testability = sum(q.get("relevance_score", 0.7) for q in questions) / len(questions) if questions else 0.5
-    
+
     return SemanticReport(
         campaign_id=generate_id("campaign"),
         questions_generated=len(questions),
@@ -563,41 +563,41 @@ def _generate_semantic_results(
     topic_extraction: Any,
 ) -> ResearchResults:
     """Generate results from semantic campaign."""
-    
+
     # Build summary
     domains = list(set(q.get("domain", "general") for q in report.questions))
     topic_str = ", ".join(topic_extraction.keywords[:5]) if topic_extraction.keywords else "the topic"
-    
+
     paragraphs = [
         f"Your research request \"{criteria[:100]}{'...' if len(criteria) > 100 else ''}\" "
         f"was analyzed for topics: {topic_str}.",
-        
+
         f"The system identified this as a {topic_extraction.intent.value} question and "
         f"generated {report.questions_generated} relevant research questions across "
         f"domains: {', '.join(domains)}.",
-        
+
         f"From these questions, {report.hypotheses_formed} testable hypotheses were formed, "
         f"each with explicit predictions and falsification criteria.",
-        
+
         f"Data was gathered from {report.unique_sources} topic-relevant sources "
         f"totaling {report.data_volume_bytes:,} bytes.",
-        
+
         f"Of {report.experiments_run} hypotheses tested: "
         f"{report.hypotheses_supported} supported, "
         f"{report.hypotheses_falsified} falsified, "
         f"{report.hypotheses_revised} revised based on evidence.",
     ]
-    
+
     if report.gate_passed:
         paragraphs.append(
             "Verification gates passed - findings meet evidence standards."
         )
-    
+
     summary = "\n\n".join(paragraphs)
-    
+
     # Build findings
     findings = []
-    
+
     # Topic relevance finding
     findings.append(ResearchFinding(
         finding_type="success",
@@ -606,7 +606,7 @@ def _generate_semantic_results(
         value=1.0,
         context=f"Intent detected: {topic_extraction.intent.value}",
     ))
-    
+
     # Questions finding
     findings.append(ResearchFinding(
         finding_type="success",
@@ -615,7 +615,7 @@ def _generate_semantic_results(
         value=float(report.questions_generated),
         context=f"Domains: {', '.join(domains)}",
     ))
-    
+
     # Hypothesis support finding
     if report.experiments_run > 0:
         support_rate = report.hypotheses_supported / report.experiments_run
@@ -626,7 +626,7 @@ def _generate_semantic_results(
             value=support_rate,
             context="Tested with statistical rigor",
         ))
-    
+
     # Data sources finding
     findings.append(ResearchFinding(
         finding_type="success",
@@ -635,10 +635,10 @@ def _generate_semantic_results(
         value=float(report.unique_sources),
         context=f"Total data: {report.data_volume_bytes:,} bytes",
     ))
-    
+
     # Build evidence
     evidence = []
-    
+
     # Questions evidence
     evidence.append(EvidenceArtifact(
         artifact_id="questions",
@@ -650,7 +650,7 @@ def _generate_semantic_results(
         created_at=report.started_at,
         expandable_data={"questions": report.questions},
     ))
-    
+
     # Hypotheses evidence
     evidence.append(EvidenceArtifact(
         artifact_id="hypotheses",
@@ -662,7 +662,7 @@ def _generate_semantic_results(
         created_at=report.started_at,
         expandable_data={"hypotheses": report.hypotheses},
     ))
-    
+
     # Experiments evidence
     evidence.append(EvidenceArtifact(
         artifact_id="experiments",
@@ -674,7 +674,7 @@ def _generate_semantic_results(
         created_at=report.started_at,
         expandable_data={"experiments": report.experiments},
     ))
-    
+
     # Data sources evidence
     evidence.append(EvidenceArtifact(
         artifact_id="data_sources",
@@ -695,7 +695,7 @@ def _generate_semantic_results(
             ]
         },
     ))
-    
+
     return ResearchResults(
         research_id=report.campaign_id,
         original_criteria=criteria,

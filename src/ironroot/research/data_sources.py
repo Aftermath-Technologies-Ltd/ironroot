@@ -37,7 +37,7 @@ AI_SECURITY_DATA = {
             "mitigation": "Input sanitization and output filtering",
         },
         {
-            "id": "CVE-2024-AI-002", 
+            "id": "CVE-2024-AI-002",
             "type": "data_poisoning",
             "severity": "critical",
             "description": "Training data poisoning leads to biased or malicious outputs",
@@ -268,19 +268,19 @@ ARXIV_AI_PAPERS = [
 
 class TopicDataSources:
     """Provides topic-relevant data for research queries."""
-    
+
     def __init__(self, seed: int | None = None):
         self.rng = random.Random(seed)
-    
+
     def query(self, source_id: str, topic: str, context: str = "") -> DataSourceResult:
         """Query a data source for topic-relevant information."""
         start = datetime.now(timezone.utc)
-        
+
         data, record_count = self._get_source_data(source_id, topic)
-        
+
         latency = self.rng.uniform(50, 300)
         data_hash = hashlib.sha256(str(data).encode()).hexdigest()[:16]
-        
+
         return DataSourceResult(
             source_id=source_id,
             source_name=self._get_source_name(source_id),
@@ -291,10 +291,10 @@ class TopicDataSources:
             data_hash=data_hash,
             latency_ms=latency,
         )
-    
+
     def _get_source_data(self, source_id: str, topic: str) -> tuple[dict, int]:
         """Get data from a specific source based on topic."""
-        
+
         if source_id == "cve_database":
             vulns = AI_SECURITY_DATA["vulnerabilities"]
             return {
@@ -302,36 +302,36 @@ class TopicDataSources:
                 "total_count": len(vulns),
                 "severity_distribution": {"critical": 1, "high": 3, "medium": 1},
             }, len(vulns)
-        
+
         elif source_id == "security_reports":
             incidents = AI_SECURITY_DATA["incidents"]
             return {
                 "incidents": incidents,
                 "attack_vectors": AI_SECURITY_DATA["attack_vectors"],
             }, len(incidents)
-        
+
         elif source_id == "arxiv_security" or source_id == "arxiv_ai":
             papers = [p for p in ARXIV_AI_PAPERS if any(
-                t in ["security", "adversarial", "attacks", "phishing"] 
+                t in ["security", "adversarial", "attacks", "phishing"]
                 for t in p["topics"]
             )] if "security" in source_id else ARXIV_AI_PAPERS
             return {
                 "papers": papers,
                 "total_results": len(papers),
             }, len(papers)
-        
+
         elif source_id == "tech_reports" or source_id == "case_studies":
             return {
                 "productivity_data": AI_BENEFITS_DATA["productivity_gains"],
                 "cost_data": AI_BENEFITS_DATA["cost_savings"],
             }, len(AI_BENEFITS_DATA["productivity_gains"])
-        
+
         elif source_id == "ai_benchmarks":
             return {
                 "benchmarks": AI_CAPABILITIES_DATA["benchmarks"],
                 "limitations": AI_CAPABILITIES_DATA["limitations"],
             }, len(AI_CAPABILITIES_DATA["benchmarks"])
-        
+
         elif source_id == "industry_analysis" or source_id == "market_research":
             return {
                 "quality_improvements": AI_BENEFITS_DATA["quality_improvements"],
@@ -341,14 +341,14 @@ class TopicDataSources:
                     "top_use_cases": ["customer_service", "code_generation", "data_analysis"],
                 },
             }, 5
-        
+
         else:
             # Default fallback
             return {
                 "message": f"Data for {source_id} on {topic}",
                 "records": [],
             }, 0
-    
+
     def _get_source_name(self, source_id: str) -> str:
         """Get human-readable source name."""
         names = {
@@ -365,10 +365,10 @@ class TopicDataSources:
             "academic_papers": "Academic Research Papers",
         }
         return names.get(source_id, source_id.replace("_", " ").title())
-    
+
     def query_multiple(
-        self, 
-        sources: list[dict], 
+        self,
+        sources: list[dict],
         topic: str,
     ) -> list[DataSourceResult]:
         """Query multiple data sources."""

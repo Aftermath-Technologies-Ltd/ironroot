@@ -214,7 +214,7 @@ RESEARCH_DOMAINS = {
 
 def extract_topics(criteria: str) -> TopicExtraction:
     """Extract topics, keywords, and intent from research criteria.
-    
+
     Parses natural language criteria to identify:
     - Primary topics (main subject areas)
     - Secondary topics (related areas)
@@ -223,11 +223,11 @@ def extract_topics(criteria: str) -> TopicExtraction:
     - Things being evaluated
     """
     criteria_lower = criteria.lower()
-    
+
     # Find matching topics
     topic_scores: dict[str, int] = {}
     matched_keywords: list[str] = []
-    
+
     for topic, keywords in TOPIC_KEYWORDS.items():
         score = 0
         for keyword in keywords:
@@ -237,22 +237,22 @@ def extract_topics(criteria: str) -> TopicExtraction:
                     matched_keywords.append(keyword)
         if score > 0:
             topic_scores[topic] = score
-    
+
     # Sort by score
     sorted_topics = sorted(topic_scores.items(), key=lambda x: x[1], reverse=True)
-    
+
     primary = [t[0] for t in sorted_topics[:2]] if sorted_topics else ["technology"]
     secondary = [t[0] for t in sorted_topics[2:4]] if len(sorted_topics) > 2 else []
-    
+
     # Detect intent
     intent = _detect_intent(criteria_lower)
-    
+
     # Extract sentiment targets (risk/benefit evaluation)
     sentiment_targets = _extract_sentiment_targets(criteria_lower)
-    
+
     # Map to research domains
     domain_hints = _map_to_domains(primary, secondary, intent, sentiment_targets)
-    
+
     return TopicExtraction(
         primary_topics=primary,
         secondary_topics=secondary,
@@ -275,16 +275,16 @@ def _detect_intent(text: str) -> ResearchIntent:
 def _extract_sentiment_targets(text: str) -> list[str]:
     """Extract things being evaluated (risk, benefit, etc.)."""
     targets = []
-    
+
     sentiment_words = [
         "risk", "benefit", "advantage", "disadvantage", "danger", "safety",
         "threat", "opportunity", "harm", "help", "good", "bad", "positive", "negative"
     ]
-    
+
     for word in sentiment_words:
         if word in text:
             targets.append(word)
-    
+
     return targets
 
 
@@ -296,40 +296,40 @@ def _map_to_domains(
 ) -> list[str]:
     """Map extracted topics to research domains."""
     domains = []
-    
+
     # Check for AI + security/risk combination
     has_ai = "artificial_intelligence" in primary or "artificial_intelligence" in secondary
     has_security = "cybersecurity" in primary or "cybersecurity" in secondary
     has_risk = any(t in sentiment_targets for t in ["risk", "danger", "threat", "harm"])
     has_benefit = any(t in sentiment_targets for t in ["benefit", "advantage", "opportunity", "help"])
-    
+
     if has_ai:
         domains.append("ai_capabilities")
-        
+
         if has_security or has_risk:
             domains.append("ai_security")
-        
+
         if has_benefit:
             domains.append("ai_benefits")
-        
+
         if intent == ResearchIntent.EVALUATION:
             if "ai_security" not in domains:
                 domains.append("ai_security")
             if "ai_benefits" not in domains:
                 domains.append("ai_benefits")
-    
+
     # Add ethics if relevant keywords found
     if any(t in primary + secondary for t in ["society", "education"]):
         domains.append("ai_ethics")
-    
+
     # Add technology adoption for business context
     if "business" in primary or "technology" in primary:
         domains.append("technology_adoption")
-    
+
     # Default fallback
     if not domains:
         domains = ["ai_capabilities", "technology_adoption"]
-    
+
     return domains
 
 
@@ -342,32 +342,32 @@ def generate_questions(extraction: TopicExtraction, max_questions: int = 5) -> l
     """Generate relevant research questions based on extracted topics."""
     questions = []
     topic_label = " ".join(extraction.keywords[:3]) if extraction.keywords else "this technology"
-    
+
     for domain_name in extraction.domain_hints[:3]:
         domain = RESEARCH_DOMAINS.get(domain_name)
         if not domain:
             continue
-        
+
         for template in domain.question_templates[:2]:
             question_text = template.format(
                 topic=topic_label,
                 metric=domain.metrics[0] if domain.metrics else "performance",
                 context="enterprise settings",
             )
-            
+
             questions.append({
                 "domain": domain.name,
                 "text": question_text,
                 "template_source": domain_name,
                 "relevance_score": 0.85,
             })
-            
+
             if len(questions) >= max_questions:
                 break
-        
+
         if len(questions) >= max_questions:
             break
-    
+
     return questions
 
 
@@ -379,7 +379,7 @@ def generate_hypotheses(
     """Generate relevant hypotheses based on topics and questions."""
     hypotheses = []
     topic_label = " ".join(extraction.keywords[:3]) if extraction.keywords else "this technology"
-    
+
     # Generate based on intent
     if extraction.intent == ResearchIntent.COMPARISON or extraction.intent == ResearchIntent.EVALUATION:
         # Both positive and negative hypotheses
@@ -387,7 +387,7 @@ def generate_hypotheses(
             domain = RESEARCH_DOMAINS.get(domain_name)
             if not domain:
                 continue
-            
+
             for template in domain.hypothesis_templates[:2]:
                 hypothesis_text = template.format(
                     topic=topic_label,
@@ -395,20 +395,20 @@ def generate_hypotheses(
                     context="real-world applications",
                     attack_type="prompt injection" if "security" in domain_name else "misuse",
                 )
-                
+
                 hypotheses.append({
                     "statement": hypothesis_text,
                     "domain": domain.name,
                     "testable": True,
                     "prior_probability": 0.5,
                 })
-                
+
                 if len(hypotheses) >= max_hypotheses:
                     break
-            
+
             if len(hypotheses) >= max_hypotheses:
                 break
-    
+
     # Add null hypothesis
     if len(hypotheses) < max_hypotheses:
         hypotheses.append({
@@ -417,7 +417,7 @@ def generate_hypotheses(
             "testable": True,
             "prior_probability": 0.3,
         })
-    
+
     return hypotheses
 
 
@@ -425,12 +425,12 @@ def get_relevant_data_sources(extraction: TopicExtraction) -> list[dict]:
     """Get data sources relevant to the extracted topics."""
     sources = []
     seen = set()
-    
+
     for domain_name in extraction.domain_hints:
         domain = RESEARCH_DOMAINS.get(domain_name)
         if not domain:
             continue
-        
+
         for source in domain.data_sources:
             if source not in seen:
                 seen.add(source)
@@ -439,5 +439,5 @@ def get_relevant_data_sources(extraction: TopicExtraction) -> list[dict]:
                     "domain": domain.name,
                     "relevance": "high",
                 })
-    
+
     return sources
