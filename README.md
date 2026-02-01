@@ -185,15 +185,60 @@ cp .env.example .env
 # Start infrastructure (postgres + redis)
 ./scripts/dev_up.sh
 
-# Run migrations
-alembic upgrade head
+# Create database tables
+python -c "
+from ironroot.storage.postgres import get_engine, Base
+from ironroot.storage.models import *
+import asyncio
+asyncio.run((lambda: (async_setup := (lambda e: e.begin().__aenter__().then(lambda c: c.run_sync(Base.metadata.create_all)))))(get_engine()))
+" 2>/dev/null || python -c "
+from ironroot.storage.postgres import get_engine, Base
+from ironroot.storage.models import *
+import asyncio
+async def setup():
+    async with get_engine().begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+asyncio.run(setup())
+"
 
 # Verify: 140 tests, 50%+ coverage
 pytest -q --cov=src/ironroot --cov-fail-under=50
 
-# Start API server
+# Start API server (Terminal 1)
 ./scripts/run_once.sh
+
+# Start UI (Terminal 2)
+cd ui && npm install && npm run dev
 ```
+
+### Access Points
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Research Console** | http://localhost:3000 | Main researcher interface |
+| **API Docs** | http://localhost:8000/docs | OpenAPI/Swagger documentation |
+| **Health Check** | http://localhost:8000/api/v1/health | System status |
+
+---
+
+## 🔬 Research Console
+
+The main UI for researchers to submit research criteria and view results.
+
+![Research Console](docs/images/research_console.png)
+
+**Features:**
+- Natural language research input
+- Real-time progress tracking with ETA
+- Plain English results summary
+- Verifiable evidence with content hashes
+- Downloadable full reports
+
+**Workflow:**
+1. Enter research criteria in plain English
+2. Click "Submit Research"
+3. Watch progress as the system generates questions, forms hypotheses, gathers data
+4. View results with key findings and supporting evidence
 
 ---
 

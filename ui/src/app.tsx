@@ -2,6 +2,7 @@
 import { BrowserRouter, Link, Route, Routes, useLocation } from 'react-router-dom'
 import { Beliefs } from './pages/beliefs'
 import { Dashboard } from './pages/dashboard'
+import { ResearchConsole } from './pages/research_console'
 import { RunDetail } from './pages/run_detail'
 import { Runs } from './pages/runs'
 import { Strategies } from './pages/strategies'
@@ -27,7 +28,8 @@ function NavLink({ to, children }: { to: string; children: React.ReactNode }) {
 function Navigation() {
   return (
     <nav className="nav">
-      <NavLink to="/">Dashboard</NavLink>
+      <NavLink to="/">Research</NavLink>
+      <NavLink to="/dashboard">Dashboard</NavLink>
       <NavLink to="/runs">Runs</NavLink>
       <NavLink to="/beliefs">Beliefs</NavLink>
       <NavLink to="/strategies">Strategies</NavLink>
@@ -42,7 +44,8 @@ export function App() {
         <Navigation />
         <main className="main">
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<ResearchConsole />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/runs" element={<Runs />} />
             <Route path="/runs/:runId" element={<RunDetail />} />
             <Route path="/strategies" element={<Strategies />} />

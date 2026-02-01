@@ -82,3 +82,57 @@ export interface Artifact {
   filename: string | null
   created_at: string
 }
+
+// Research Console types
+export interface ResearchProgress {
+  status: string
+  percent: number
+  phase_description: string
+  eta_seconds: number | null
+  phases_completed: string[]
+  current_phase: string
+  details: Record<string, unknown>
+}
+
+export interface ResearchFinding {
+  finding_type: 'success' | 'partial' | 'negative'
+  summary: string
+  metric_name: string | null
+  value: number | null
+  context: string
+}
+
+export interface EvidenceArtifact {
+  artifact_id: string
+  artifact_type: string
+  content_hash: string
+  summary: string
+  created_at: string
+  expandable_data: Record<string, unknown> | null
+}
+
+export interface ResearchResults {
+  research_id: string
+  original_criteria: string
+  summary: string
+  findings: ResearchFinding[]
+  evidence: EvidenceArtifact[]
+  questions_generated: number
+  hypotheses_formed: number
+  hypotheses_supported: number
+  hypotheses_falsified: number
+  hypotheses_revised: number
+  experiments_run: number
+  data_sources_queried: number
+  started_at: string
+  completed_at: string
+  duration_seconds: number
+  gate_passed: boolean
+}
+
+export interface SubmitResearchResponse {
+  research_id: string
+  status: string
+  message: string
+  estimated_time_seconds: number
+}

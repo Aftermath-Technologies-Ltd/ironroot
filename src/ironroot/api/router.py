@@ -10,6 +10,7 @@ from ironroot.api.routes import (
     beliefs,
     health,
     reality,
+    research,
     runs,
     strategies,
     tests,
@@ -28,3 +29,4 @@ api_router.include_router(tests.router, prefix="/tests", tags=["tests"])
 api_router.include_router(ui.router, prefix="/ui", tags=["ui"])
 api_router.include_router(reality.router, prefix="/reality", tags=["reality"])
 api_router.include_router(agi.router, tags=["agi"])
+api_router.include_router(research.router, prefix="/research", tags=["research"])

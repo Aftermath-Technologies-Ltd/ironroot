@@ -94,4 +94,17 @@ export const api = {
   // health
   getHealth: () =>
     request<{ status: string; db: string; redis: string; artifacts: string }>('/health'),
+
+  // research console
+  submitResearch: (params: { criteria: string; seed?: number | null }) =>
+    request<import('./types').SubmitResearchResponse>('/research/submit', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
+
+  getResearchStatus: (researchId: string) =>
+    request<import('./types').ResearchProgress>(`/research/${researchId}/status`),
+
+  getResearchResults: (researchId: string) =>
+    request<import('./types').ResearchResults>(`/research/${researchId}/results`),
 }
