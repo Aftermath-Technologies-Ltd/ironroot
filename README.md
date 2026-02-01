@@ -229,11 +229,36 @@ The main UI for researchers to submit research criteria and view results.
 
 
 **Features:**
-- Natural language research input
+- Natural language research input with **semantic understanding**
+- Topic extraction and domain mapping
 - Real-time progress tracking with ETA
 - Plain English results summary
 - Verifiable evidence with content hashes
-- Downloadable full reports
+
+### Semantic Research Pipeline
+
+The system uses NLP to parse your research criteria:
+
+```
+Input: "test whether generative AI is a security risk or a benefit"
+
+→ Topics Detected: artificial_intelligence, cybersecurity
+→ Keywords: ai, generative ai, security, risk
+→ Intent: comparison (risk vs benefit)
+→ Domains Selected: AI Security & Risks, AI Benefits, AI Capabilities
+```
+
+**Questions are generated relevant to your topic:**
+- What security vulnerabilities have been identified in generative AI systems?
+- What attack vectors exist for generative AI technology?
+- What measurable benefits does generative AI provide?
+
+**Data sources are topic-appropriate:**
+- CVE Security Database
+- arXiv AI/Security Papers
+- AI Benchmark Database
+- Security Incident Reports
+- Enterprise Case Studies
 
 **Workflow:**
 1. Enter research criteria in plain English
