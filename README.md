@@ -225,7 +225,8 @@ cd ui && npm install && npm run dev
 
 The main UI for researchers to submit research criteria and view results.
 
-![Research Console](docs/images/research_console.png)
+<img width="1918" height="912" alt="image" src="https://github.com/user-attachments/assets/b5593e43-6a95-4693-9c9a-e750f7e314a3" />
+
 
 **Features:**
 - Natural language research input
