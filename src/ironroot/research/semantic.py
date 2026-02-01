@@ -51,7 +51,12 @@ TOPIC_KEYWORDS = {
         "ai", "artificial intelligence", "machine learning", "ml", "deep learning",
         "neural network", "llm", "large language model", "gpt", "chatgpt", "claude",
         "generative ai", "genai", "transformer", "nlp", "natural language",
-        "computer vision", "robotics", "automation", "algorithm"
+        "computer vision", "robotics", "automation", "algorithm",
+        "reinforcement learning", "reinforced learning", "rl", "supervised learning",
+        "unsupervised learning", "training", "model", "inference", "fine-tuning",
+        "accuracy", "precision", "recall", "f1", "benchmark", "performance",
+        "classification", "regression", "prediction", "neural", "network",
+        "gradient", "backpropagation", "optimization", "loss function"
     ],
     "cybersecurity": [
         "security", "cybersecurity", "cyber", "hack", "hacking", "vulnerability",
@@ -78,8 +83,8 @@ TOPIC_KEYWORDS = {
         "trading", "cryptocurrency", "crypto", "bitcoin", "fraud", "money"
     ],
     "education": [
-        "education", "learning", "school", "university", "student", "teaching",
-        "academic", "research", "study", "curriculum", "training"
+        "education", "school", "university", "student", "teaching",
+        "academic", "curriculum", "classroom", "teacher", "pedagogy"
     ],
     "environment": [
         "climate", "environment", "environmental", "sustainability", "carbon",
@@ -209,6 +214,24 @@ RESEARCH_DOMAINS = {
         data_sources=["market_research", "industry_surveys", "tech_reports"],
         metrics=["adoption_rate", "market_share", "growth_rate", "penetration"],
     ),
+    "ml_performance": ResearchDomain(
+        name="ML Model Performance & Accuracy",
+        keywords=["accuracy", "performance", "learning", "training", "model", "benchmark"],
+        question_templates=[
+            "How does {topic} affect model accuracy compared to baselines?",
+            "What performance benchmarks exist for {topic}?",
+            "Under what conditions does {topic} improve or degrade performance?",
+            "What are the trade-offs between {topic} and other approaches?",
+        ],
+        hypothesis_templates=[
+            "{topic} improves accuracy over baseline methods",
+            "{topic} shows diminishing returns at scale",
+            "Performance gains from {topic} are task-dependent",
+            "{topic} outperforms alternatives on {metric}",
+        ],
+        data_sources=["arxiv_ai", "ai_benchmarks", "ml_papers"],
+        metrics=["accuracy", "f1_score", "precision", "recall", "loss", "benchmark_score"],
+    ),
 }
 
 
@@ -250,8 +273,8 @@ def extract_topics(criteria: str) -> TopicExtraction:
     # Extract sentiment targets (risk/benefit evaluation)
     sentiment_targets = _extract_sentiment_targets(criteria_lower)
 
-    # Map to research domains
-    domain_hints = _map_to_domains(primary, secondary, intent, sentiment_targets)
+    # Map to research domains (pass keywords for performance detection)
+    domain_hints = _map_to_domains(primary, secondary, intent, sentiment_targets, matched_keywords)
 
     return TopicExtraction(
         primary_topics=primary,
@@ -293,9 +316,11 @@ def _map_to_domains(
     secondary: list[str],
     intent: ResearchIntent,
     sentiment_targets: list[str],
+    keywords: list[str] | None = None,
 ) -> list[str]:
     """Map extracted topics to research domains."""
     domains = []
+    keywords = keywords or []
 
     # Check for AI + security/risk combination
     has_ai = "artificial_intelligence" in primary or "artificial_intelligence" in secondary
@@ -303,8 +328,16 @@ def _map_to_domains(
     has_risk = any(t in sentiment_targets for t in ["risk", "danger", "threat", "harm"])
     has_benefit = any(t in sentiment_targets for t in ["benefit", "advantage", "opportunity", "help"])
 
+    # Check for ML performance keywords
+    performance_keywords = ["accuracy", "performance", "learning", "training", "benchmark", "model"]
+    has_performance = any(kw in keywords for kw in performance_keywords)
+
     if has_ai:
         domains.append("ai_capabilities")
+
+        # Add ML performance domain for accuracy/performance questions
+        if has_performance or intent == ResearchIntent.MEASUREMENT:
+            domains.append("ml_performance")
 
         if has_security or has_risk:
             domains.append("ai_security")
@@ -318,17 +351,23 @@ def _map_to_domains(
             if "ai_benefits" not in domains:
                 domains.append("ai_benefits")
 
+        # For causation intent (does X affect Y), add ML performance
+        if intent == ResearchIntent.CAUSATION and "ml_performance" not in domains:
+            domains.append("ml_performance")
+
     # Add ethics if relevant keywords found
-    if any(t in primary + secondary for t in ["society", "education"]):
+    if any(t in primary + secondary for t in ["society"]):
         domains.append("ai_ethics")
 
     # Add technology adoption for business context
     if "business" in primary or "technology" in primary:
         domains.append("technology_adoption")
 
-    # Default fallback
-    if not domains:
-        domains = ["ai_capabilities", "technology_adoption"]
+    # Default fallback - if we have AI but no domains, add capabilities and performance
+    if not domains and has_ai:
+        domains = ["ai_capabilities", "ml_performance"]
+    elif not domains:
+        domains = ["ai_capabilities", "ml_performance"]
 
     return domains
 

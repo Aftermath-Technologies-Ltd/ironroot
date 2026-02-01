@@ -342,6 +342,37 @@ class TopicDataSources:
                 },
             }, 5
 
+        elif source_id == "ml_papers":
+            # ML performance papers
+            ml_papers = [
+                {
+                    "id": "arxiv:2401.10001",
+                    "title": "Reinforcement Learning for Improved Model Accuracy",
+                    "abstract": "Study showing RL-based training improves accuracy by 15-25% over supervised learning baselines across 5 benchmark tasks.",
+                    "accuracy_improvement": 0.20,
+                    "year": 2024,
+                },
+                {
+                    "id": "arxiv:2401.10002", 
+                    "title": "Comparative Analysis of Learning Paradigms",
+                    "abstract": "Comprehensive comparison of reinforcement, supervised, and self-supervised learning showing task-dependent performance variations.",
+                    "accuracy_improvement": 0.12,
+                    "year": 2024,
+                },
+                {
+                    "id": "arxiv:2401.10003",
+                    "title": "When Does Reinforcement Learning Help? An Empirical Study",
+                    "abstract": "Analysis of 50+ tasks identifying conditions where RL outperforms alternatives, with accuracy gains of 8-35%.",
+                    "accuracy_improvement": 0.18,
+                    "year": 2024,
+                },
+            ]
+            return {
+                "papers": ml_papers,
+                "total_results": len(ml_papers),
+                "avg_accuracy_improvement": 0.17,
+            }, len(ml_papers)
+
         else:
             # Default fallback
             return {
@@ -363,6 +394,7 @@ class TopicDataSources:
             "market_research": "Market Research Data",
             "policy_reports": "Policy & Regulatory Reports",
             "academic_papers": "Academic Research Papers",
+            "ml_papers": "ML Performance Research Papers",
         }
         return names.get(source_id, source_id.replace("_", " ").title())
 
