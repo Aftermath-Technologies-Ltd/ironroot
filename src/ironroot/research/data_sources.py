@@ -353,7 +353,7 @@ class TopicDataSources:
                     "year": 2024,
                 },
                 {
-                    "id": "arxiv:2401.10002", 
+                    "id": "arxiv:2401.10002",
                     "title": "Comparative Analysis of Learning Paradigms",
                     "abstract": "Comprehensive comparison of reinforcement, supervised, and self-supervised learning showing task-dependent performance variations.",
                     "accuracy_improvement": 0.12,

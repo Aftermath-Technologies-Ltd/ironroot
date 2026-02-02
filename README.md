@@ -229,42 +229,60 @@ The main UI for researchers to submit research criteria and view results.
 
 
 **Features:**
-- Natural language research input with **semantic understanding**
-- Topic extraction and domain mapping
-- Real-time progress tracking with ETA
-- Plain English results summary
-- Verifiable evidence with content hashes
+- Natural language research input with **LLM-powered understanding**
+- Real-time web search with citations via Grok API
+- Academic paper search via Semantic Scholar & arXiv
+- Hypothesis generation and evidence gathering
+- Plain English synthesis with confidence scores
+- Verifiable evidence with content hashes and source URLs
 
-### Semantic Research Pipeline
+### LLM-Powered Research (New!)
 
-The system uses NLP to parse your research criteria:
+The system now uses real LLM and data sources:
 
 ```
-Input: "test whether generative AI is a security risk or a benefit"
+Input: "Can belief-based systems help autonomous agents make better decisions?"
 
-→ Topics Detected: artificial_intelligence, cybersecurity
-→ Keywords: ai, generative ai, security, risk
-→ Intent: comparison (risk vs benefit)
-→ Domains Selected: AI Security & Risks, AI Benefits, AI Capabilities
+→ LLM parses intent: evaluative question about AI decision-making
+→ Generates 5 research questions with search terms
+→ Forms 3 testable hypotheses with falsification criteria
+→ Searches Semantic Scholar, arXiv, and web for evidence
+→ Synthesizes findings with citations and confidence score
 ```
 
-**Questions are generated relevant to your topic:**
-- What security vulnerabilities have been identified in generative AI systems?
-- What attack vectors exist for generative AI technology?
-- What measurable benefits does generative AI provide?
+**Real Data Sources:**
+| Source | Type | Access |
+|--------|------|--------|
+| **Grok Web Search** | Real-time web with citations | xAI API |
+| **Semantic Scholar** | Academic papers, citations | Free API |
+| **arXiv** | Preprints, technical papers | Free API |
 
-**Data sources are topic-appropriate:**
-- CVE Security Database
-- arXiv AI/Security Papers
-- AI Benchmark Database
-- Security Incident Reports
-- Enterprise Case Studies
+**LLM Configuration:**
+
+```bash
+# In .env file:
+
+# xAI Grok API (for web search and reasoning)
+XAI_API_KEY=your-key-here
+
+# Local LLM via Ollama (optional, for synthesis)
+OLLAMA_HOST=http://localhost:11434
+OLLAMA_MODEL=llama3.2:8b
+
+# Provider: "grok", "ollama", or "hybrid"
+LLM_PROVIDER=hybrid
+```
+
+**Hybrid Mode (Recommended):**
+- Uses Grok for web search (real-time data with citations)
+- Uses local Ollama for synthesis (reduces API costs)
+- Falls back gracefully if either is unavailable
 
 **Workflow:**
 1. Enter research criteria in plain English
 2. Click "Submit Research"
 3. Watch progress as the system generates questions, forms hypotheses, gathers data
-4. View results with key findings and supporting evidence
+4. View results with key findings, citations, and confidence scores
 
 ---
 

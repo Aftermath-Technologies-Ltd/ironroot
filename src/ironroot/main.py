@@ -4,8 +4,12 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Load .env before anything else (for LLM config vars)
+load_dotenv()
 
 from ironroot.api.router import api_router
 from ironroot.logging.configure import get_logger

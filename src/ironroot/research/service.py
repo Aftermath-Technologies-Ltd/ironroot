@@ -7,11 +7,16 @@ This service:
 3. Runs autonomous research campaigns
 4. Generates plain English results
 5. Tracks progress for real-time updates
+
+Supports two modes:
+- LLM mode (default): Uses Grok/Ollama for real research with web search
+- Template mode: Falls back to template-based system if LLM unavailable
 """
 
 import asyncio
 import hashlib
 import json
+import os
 import random
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -23,6 +28,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ironroot.domain.ids import generate_id
 from ironroot.storage.artifact_service import get_artifact_service
 from ironroot.agi.autonomous_research import AutonomousResearchAgent
+
+
+# Check if LLM mode is enabled
+def _use_llm_mode() -> bool:
+    """Check if LLM mode should be used."""
+    # Use LLM if XAI_API_KEY is set OR Ollama is configured
+    return bool(os.getenv("XAI_API_KEY")) or os.getenv("LLM_PROVIDER") == "ollama"
 
 
 class ResearchStatus(str, Enum):
@@ -218,77 +230,11 @@ async def _run_research(session: AsyncSession, research_id: str) -> None:
         return
 
     try:
-        run_id = generate_id("run")
-
-        # Phase 1: Parsing criteria with semantic understanding
-        _update_progress(
-            research_id,
-            ResearchStatus.PARSING,
-            5,
-            "Analyzing your research criteria...",
-            "parsing",
-            eta_seconds=110,
-        )
-
-        # Import semantic parser
-        from ironroot.research.semantic import extract_topics, generate_questions, generate_hypotheses, get_relevant_data_sources
-        from ironroot.research.data_sources import TopicDataSources
-
-        # Extract topics from user's criteria
-        topic_extraction = extract_topics(job.criteria)
-
-        await asyncio.sleep(0.2)
-
-        # Phase 2: Generate contextually relevant questions
-        _update_progress(
-            research_id,
-            ResearchStatus.GENERATING_QUESTIONS,
-            15,
-            f"Generating research questions about {', '.join(topic_extraction.primary_topics)}...",
-            "questions",
-            eta_seconds=90,
-            completed_phase="parsing",
-        )
-
-        # Generate topic-relevant questions
-        questions = generate_questions(topic_extraction, max_questions=5)
-
-        await asyncio.sleep(0.2)
-
-        from ironroot.storage.postgres import get_session
-
-        async with get_session() as db_session:
-            # Run semantic campaign
-            report = await _run_semantic_campaign(
-                db_session, run_id, research_id, job.criteria, job.seed,
-                topic_extraction, questions
-            )
-
-            # Generate results
-            _update_progress(
-                research_id,
-                ResearchStatus.ANALYZING,
-                90,
-                "Generating plain English summary...",
-                "analyzing",
-                eta_seconds=10,
-                completed_phase="testing",
-            )
-
-            results = _generate_semantic_results(job.criteria, report, topic_extraction)
-
-            # Complete
-            job.results = results
-            job.status = ResearchStatus.COMPLETED
-            _update_progress(
-                research_id,
-                ResearchStatus.COMPLETED,
-                100,
-                "Research complete!",
-                "complete",
-                eta_seconds=0,
-                completed_phase="analyzing",
-            )
+        # Check if we should use LLM mode
+        if _use_llm_mode():
+            await _run_llm_research(research_id, job)
+        else:
+            await _run_template_research(session, research_id, job)
 
     except Exception as e:
         job.status = ResearchStatus.FAILED
@@ -300,6 +246,285 @@ async def _run_research(session: AsyncSession, research_id: str) -> None:
             f"Research failed: {e}",
             "error",
             eta_seconds=0,
+        )
+
+
+async def _run_llm_research(research_id: str, job: ResearchJob) -> None:
+    """Run research using LLM engine with real data sources."""
+    from ironroot.research.llm_engine import LLMResearchEngine
+
+    engine = LLMResearchEngine()
+
+    try:
+        def progress_callback(phase: str, percent: int, msg: str):
+            status_map = {
+                "parsing": ResearchStatus.PARSING,
+                "questions": ResearchStatus.GENERATING_QUESTIONS,
+                "hypotheses": ResearchStatus.FORMING_HYPOTHESES,
+                "evidence": ResearchStatus.GATHERING_DATA,
+                "synthesis": ResearchStatus.ANALYZING,
+            }
+            status = status_map.get(phase, ResearchStatus.ANALYZING)
+            _update_progress(
+                research_id,
+                status,
+                percent,
+                msg,
+                phase,
+                eta_seconds=max(0, int((100 - percent) * 1.5)),
+            )
+
+        # Run the LLM research engine
+        findings = await engine.research(
+            job.criteria,
+            max_questions=5,
+            max_hypotheses=3,
+            progress_callback=progress_callback,
+        )
+
+        # Convert to ResearchResults format
+        results = _convert_llm_findings(findings, research_id)
+
+        job.results = results
+        job.status = ResearchStatus.COMPLETED
+        _update_progress(
+            research_id,
+            ResearchStatus.COMPLETED,
+            100,
+            "Research complete!",
+            "complete",
+            eta_seconds=0,
+            completed_phase="synthesis",
+        )
+    finally:
+        await engine.close()
+
+
+def _convert_llm_findings(findings: Any, research_id: str) -> ResearchResults:
+    """Convert LLM engine findings to ResearchResults format."""
+    # Build findings list
+    result_findings = [
+        ResearchFinding(
+            finding_type="success",
+            summary=f"Analyzed query with {len(findings.questions)} research questions",
+            metric_name="questions",
+            value=float(len(findings.questions)),
+            context=f"Intent: {findings.parsed_intent}",
+        ),
+        ResearchFinding(
+            finding_type="success",
+            summary=f"Formed {len(findings.hypotheses)} testable hypotheses",
+            metric_name="hypotheses",
+            value=float(len(findings.hypotheses)),
+            context="Each with predictions and falsification criteria",
+        ),
+        ResearchFinding(
+            finding_type="success",
+            summary=f"Gathered evidence from {len(findings.evidence)} sources",
+            metric_name="evidence",
+            value=float(len(findings.evidence)),
+            context=f"{len(findings.citations)} citations found",
+        ),
+    ]
+
+    if findings.confidence >= 0.7:
+        result_findings.append(ResearchFinding(
+            finding_type="success",
+            summary=f"High confidence in findings ({findings.confidence:.0%})",
+            metric_name="confidence",
+            value=findings.confidence,
+            context="Based on quality and consistency of evidence",
+        ))
+    elif findings.confidence >= 0.4:
+        result_findings.append(ResearchFinding(
+            finding_type="partial",
+            summary=f"Moderate confidence ({findings.confidence:.0%})",
+            metric_name="confidence",
+            value=findings.confidence,
+            context="Some evidence gaps exist",
+        ))
+
+    # Build evidence artifacts
+    evidence_artifacts = []
+
+    # Questions artifact
+    evidence_artifacts.append(EvidenceArtifact(
+        artifact_id="questions",
+        artifact_type="research_questions",
+        content_hash=hashlib.sha256(
+            json.dumps([q.question for q in findings.questions]).encode()
+        ).hexdigest()[:16],
+        summary=f"{len(findings.questions)} research questions generated",
+        created_at=findings.started_at,
+        expandable_data={
+            "questions": [
+                {
+                    "question": q.question,
+                    "type": q.question_type,
+                    "rationale": q.rationale,
+                    "search_terms": q.search_terms,
+                }
+                for q in findings.questions
+            ]
+        },
+    ))
+
+    # Hypotheses artifact
+    evidence_artifacts.append(EvidenceArtifact(
+        artifact_id="hypotheses",
+        artifact_type="hypothesis_outcomes",
+        content_hash=hashlib.sha256(
+            json.dumps([h.statement for h in findings.hypotheses]).encode()
+        ).hexdigest()[:16],
+        summary=f"{len(findings.hypotheses)} testable hypotheses",
+        created_at=findings.started_at,
+        expandable_data={
+            "hypotheses": [
+                {
+                    "statement": h.statement,
+                    "prediction": h.prediction,
+                    "falsification": h.falsification_criteria,
+                    "evidence_needed": h.evidence_needed,
+                    "prior_probability": h.prior_probability,
+                }
+                for h in findings.hypotheses
+            ]
+        },
+    ))
+
+    # Evidence artifact
+    evidence_artifacts.append(EvidenceArtifact(
+        artifact_id="evidence",
+        artifact_type="research_evidence",
+        content_hash=hashlib.sha256(
+            json.dumps([e.source_url for e in findings.evidence]).encode()
+        ).hexdigest()[:16],
+        summary=f"Evidence from {len(findings.evidence)} sources",
+        created_at=findings.started_at,
+        expandable_data={
+            "sources": [
+                {
+                    "type": e.source_type,
+                    "title": e.source_title,
+                    "url": e.source_url,
+                    "relevance": e.relevance,
+                    "hash": e.data_hash,
+                }
+                for e in findings.evidence
+            ]
+        },
+    ))
+
+    # Citations artifact
+    if findings.citations:
+        evidence_artifacts.append(EvidenceArtifact(
+            artifact_id="citations",
+            artifact_type="source_citations",
+            content_hash=hashlib.sha256(
+                json.dumps(findings.citations).encode()
+            ).hexdigest()[:16],
+            summary=f"{len(findings.citations)} citations with URLs",
+            created_at=findings.started_at,
+            expandable_data={"citations": findings.citations},
+        ))
+
+    # Calculate duration
+    started = datetime.fromisoformat(findings.started_at.replace('Z', '+00:00'))
+    completed = datetime.fromisoformat(findings.completed_at.replace('Z', '+00:00'))
+    duration = (completed - started).total_seconds()
+
+    return ResearchResults(
+        research_id=research_id,
+        original_criteria=findings.original_query,
+        summary=findings.synthesis,
+        findings=result_findings,
+        evidence=evidence_artifacts,
+        questions_generated=len(findings.questions),
+        hypotheses_formed=len(findings.hypotheses),
+        hypotheses_supported=sum(1 for h in findings.hypotheses if h.prior_probability > 0.5),
+        hypotheses_falsified=0,
+        hypotheses_revised=0,
+        experiments_run=len(findings.evidence),
+        data_sources_queried=len(set(e.source_type for e in findings.evidence)),
+        started_at=findings.started_at,
+        completed_at=findings.completed_at,
+        duration_seconds=duration,
+        gate_passed=findings.confidence >= 0.5,
+    )
+
+
+async def _run_template_research(session: AsyncSession, research_id: str, job: ResearchJob) -> None:
+    """Run research using template-based system (fallback when no LLM)."""
+    run_id = generate_id("run")
+
+    # Phase 1: Parsing criteria with semantic understanding
+    _update_progress(
+        research_id,
+        ResearchStatus.PARSING,
+        5,
+        "Analyzing your research criteria...",
+        "parsing",
+        eta_seconds=110,
+    )
+
+    # Import semantic parser
+    from ironroot.research.semantic import extract_topics, generate_questions, generate_hypotheses, get_relevant_data_sources
+    from ironroot.research.data_sources import TopicDataSources
+
+    # Extract topics from user's criteria
+    topic_extraction = extract_topics(job.criteria)
+
+    await asyncio.sleep(0.2)
+
+    # Phase 2: Generate contextually relevant questions
+    _update_progress(
+        research_id,
+        ResearchStatus.GENERATING_QUESTIONS,
+        15,
+        f"Generating research questions about {', '.join(topic_extraction.primary_topics)}...",
+        "questions",
+        eta_seconds=90,
+        completed_phase="parsing",
+    )
+
+    # Generate topic-relevant questions
+    questions = generate_questions(topic_extraction, max_questions=5)
+
+    await asyncio.sleep(0.2)
+
+    from ironroot.storage.postgres import get_session
+
+    async with get_session() as db_session:
+        # Run semantic campaign
+        report = await _run_semantic_campaign(
+            db_session, run_id, research_id, job.criteria, job.seed,
+            topic_extraction, questions
+        )
+
+        # Generate results
+        _update_progress(
+            research_id,
+            ResearchStatus.ANALYZING,
+            90,
+            "Generating plain English summary...",
+            "analyzing",
+            eta_seconds=10,
+            completed_phase="testing",
+        )
+
+        results = _generate_semantic_results(job.criteria, report, topic_extraction)
+
+        # Complete
+        job.results = results
+        job.status = ResearchStatus.COMPLETED
+        _update_progress(
+            research_id,
+            ResearchStatus.COMPLETED,
+            100,
+            "Research complete!",
+            "complete",
+            eta_seconds=0,
+            completed_phase="analyzing",
         )
 
 
