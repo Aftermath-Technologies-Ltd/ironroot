@@ -5,7 +5,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -73,7 +75,14 @@ class RunRecord(Base):
 
 
 class BeliefRecord(Base):
-    """append-only belief records with hash chain."""
+    """append-only belief records with hash chain.
+
+    `seq` is the monotonic per-chain ordering column introduced in Phase 1.1.
+    It is unique within `(run_id, seq)` and the row whose `seq = 1` is the
+    chain root (has `parent_hash IS NULL`). All chain-parent lookups use
+    `ORDER BY seq DESC` with `FOR UPDATE` plus a Postgres advisory lock keyed
+    on `run_id`. Do not order by `created_at` for chain logic.
+    """
 
     __tablename__ = "beliefs"
 
@@ -81,10 +90,11 @@ class BeliefRecord(Base):
     run_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("runs.id"), nullable=False, index=True
     )
+    seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
     agent_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     belief_type: Mapped[str] = mapped_column(
         String(20), nullable=False, default="lifecycle", index=True
-    )  # lifecycle, observation, hypothesis
+    )  # lifecycle, observation, hypothesis, prediction, gate_result, violation
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     parent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     content: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
@@ -98,7 +108,15 @@ class BeliefRecord(Base):
         back_populates="belief", foreign_keys="ContradictionRecord.belief_id"
     )
 
-    __table_args__ = (Index("ix_beliefs_run_agent", "run_id", "agent_id"),)
+    __table_args__ = (
+        Index("ix_beliefs_run_agent", "run_id", "agent_id"),
+        Index("ix_beliefs_run_seq", "run_id", "seq"),
+        UniqueConstraint("run_id", "seq", name="uq_beliefs_run_seq"),
+        CheckConstraint(
+            "(parent_hash IS NULL AND seq = 1) OR (parent_hash IS NOT NULL AND seq > 1)",
+            name="ck_beliefs_root_iff_seq_one",
+        ),
+    )
 
 
 class ContradictionRecord(Base):

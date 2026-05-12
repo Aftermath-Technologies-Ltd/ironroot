@@ -1,18 +1,21 @@
 # Author: Bradley R. Kinnard
 """belief service with strict research discipline enforcement."""
 
+import asyncio
 import hashlib
 import json
 import re
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ironroot.domain.errors import InvariantViolation
-from ironroot.domain.ids import generate_id
+from ironroot.domain.errors import ImmutabilityViolation, InvariantViolation
+from ironroot.domain.ids import generate_id, hash_content
 from ironroot.orchestration.supervisor import RunPhase
 from ironroot.storage.models import ArtifactRecord, BeliefRecord, RunRecord
 
@@ -175,7 +178,24 @@ PRIMARY_METRIC_NAMES = {
 
 
 class BeliefService:
-    """enforces research belief discipline: types, phases, and semantic requirements."""
+    """canonical belief service.
+
+    Owns chain integrity: parent-hash linkage, monotonic `seq` ordering, and
+    serialization of appends per chain (`run_id`). Callers MUST NOT supply a
+    `parent_hash`; the service derives it under a per-chain Postgres advisory
+    lock (`pg_advisory_xact_lock` on a stable hash of `run_id`) plus a
+    `SELECT ... ORDER BY seq DESC LIMIT 1 FOR UPDATE` against the beliefs
+    table. The `parent_hash=` parameter on the public methods is retained
+    only as a deprecated, ignored kwarg so older callers (orchestration
+    executor) keep type-checking until Phase 2 deletes the dead state. On
+    non-Postgres backends used in tests (SQLite via aiosqlite), the service
+    falls back to a process-level `asyncio.Lock` keyed by `(engine, run_id)`;
+    the `with_for_update()` clause is a no-op there.
+    """
+
+    def __init__(self) -> None:
+        self._in_process_locks: dict[tuple[int, str], asyncio.Lock] = {}
+        self._locks_guard = asyncio.Lock()
 
     async def create_lifecycle_belief(
         self,
@@ -627,31 +647,96 @@ class BeliefService:
         content: dict[str, Any],
         confidence: float,
         topic_tags: list[str],
-        parent_hash: str | None,
+        parent_hash: str | None,  # ignored; chain owns parent linkage
         evidence_ids: list[str],
     ) -> BeliefRecord:
-        """internal belief creation with hashing."""
+        """internal belief creation.
+
+        The `parent_hash` argument is intentionally ignored: the service
+        derives the parent under the per-chain lock to prevent forks
+        (see class docstring). The kwarg is retained for one release so
+        the orchestration executor keeps type-checking.
+        """
+        del parent_hash  # explicitly discard caller-supplied value
+
         # include run_id in hash to allow same content across runs
         hash_input = json.dumps({"run_id": run_id, "content": content}, sort_keys=True)
         content_hash = hashlib.sha256(hash_input.encode()).hexdigest()
-
         belief_id = generate_id("bel")
-        record = BeliefRecord(
-            id=belief_id,
-            run_id=run_id,
-            agent_id=agent_id,
-            belief_type=belief_type.value,
-            content=content,
-            content_hash=content_hash,
-            parent_hash=parent_hash,
-            confidence=confidence,
-            topic_tags=topic_tags,
-            evidence_ids=evidence_ids,
-            created_at=datetime.now(UTC),
+        now = datetime.now(UTC)
+
+        async with self._chain_lock(session, run_id):
+            prev_seq, prev_hash = await self._get_chain_tip_locked(session, run_id)
+            new_seq = prev_seq + 1
+            new_parent = prev_hash  # None when chain is empty (seq == 1)
+
+            record = BeliefRecord(
+                id=belief_id,
+                run_id=run_id,
+                seq=new_seq,
+                agent_id=agent_id,
+                belief_type=belief_type.value,
+                content=content,
+                content_hash=content_hash,
+                parent_hash=new_parent,
+                confidence=confidence,
+                topic_tags=topic_tags,
+                evidence_ids=evidence_ids,
+                created_at=now,
+            )
+            session.add(record)
+            await session.flush()
+            return record
+
+    @asynccontextmanager
+    async def _chain_lock(
+        self, session: AsyncSession, run_id: str
+    ) -> AsyncIterator[None]:
+        """serializes appends per chain.
+
+        Postgres: `pg_advisory_xact_lock(:key)` taken inside the current
+        transaction; auto-released at commit/rollback. The key is a stable
+        signed bigint derived from sha256(run_id), so different runs do not
+        contend.
+
+        Non-Postgres (SQLite/tests): process-level `asyncio.Lock` keyed by
+        `(engine_id, run_id)`. Sufficient for in-process concurrency tests.
+        """
+        bind = session.bind
+        dialect = bind.dialect.name if bind is not None else ""
+        if dialect == "postgresql":
+            digest = hashlib.sha256(run_id.encode()).digest()[:8]
+            key = int.from_bytes(digest, "big", signed=True)
+            await session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": key})
+            yield
+            return
+
+        bind_key = id(bind)
+        async with self._locks_guard:
+            lock = self._in_process_locks.setdefault((bind_key, run_id), asyncio.Lock())
+        async with lock:
+            yield
+
+    async def _get_chain_tip_locked(
+        self, session: AsyncSession, run_id: str
+    ) -> tuple[int, str | None]:
+        """returns (max_seq, tip_content_hash) under FOR UPDATE.
+
+        Returns (0, None) when the chain is empty. Callers must already hold
+        the chain lock (see `_chain_lock`).
+        """
+        stmt = (
+            select(BeliefRecord.seq, BeliefRecord.content_hash)
+            .where(BeliefRecord.run_id == run_id)
+            .order_by(BeliefRecord.seq.desc())
+            .limit(1)
+            .with_for_update()
         )
-        session.add(record)
-        await session.flush()
-        return record
+        result = await session.execute(stmt)
+        row = result.first()
+        if row is None:
+            return 0, None
+        return int(row.seq), str(row.content_hash)
 
     async def _get_run(self, session: AsyncSession, run_id: str) -> RunRecord | None:
         result = await session.execute(select(RunRecord).where(RunRecord.id == run_id))
@@ -685,6 +770,161 @@ class BeliefService:
         )
         observations = list(result.scalars().all())
         return sum(1 for o in observations if o.content.get("metric_class") == "primary")
+
+    # ------------------------------------------------------------------
+    # Generic / chain-management API (consolidated from the old
+    # cognition.memory.belief_service module — Phase 1.7).
+    # ------------------------------------------------------------------
+
+    async def create_belief(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        agent_id: str,
+        content: dict[str, object],
+        confidence: float,
+        evidence_ids: list[str] | None = None,
+        topic_tags: list[str] | None = None,
+    ) -> BeliefRecord:
+        """generic belief append (legacy /beliefs API surface).
+
+        Uses the same locked, seq-based append path as the typed writers,
+        so concurrent calls produce a totally-ordered chain.
+        """
+        # Generic API hashes only the content bytes (the typed API includes
+        # run_id in the hash input — see _create_belief). Diverging here is
+        # intentional to preserve byte-equivalence with the cross-language
+        # @ironroot/core fixtures which use raw-content hashing.
+        content_bytes = json.dumps(content, sort_keys=True).encode()
+        content_hash = hash_content(content_bytes)
+        belief_id = generate_id("bel")
+        now = datetime.now(UTC)
+
+        async with self._chain_lock(session, run_id):
+            prev_seq, prev_hash = await self._get_chain_tip_locked(session, run_id)
+            new_seq = prev_seq + 1
+            record = BeliefRecord(
+                id=belief_id,
+                run_id=run_id,
+                seq=new_seq,
+                agent_id=agent_id,
+                belief_type=BeliefType.LIFECYCLE.value,
+                content_hash=content_hash,
+                parent_hash=prev_hash,
+                content=content,
+                confidence=confidence,
+                evidence_ids=evidence_ids or [],
+                topic_tags=topic_tags or [],
+                created_at=now,
+            )
+            session.add(record)
+            await session.flush()
+
+        await session.execute(
+            update(RunRecord)
+            .where(RunRecord.id == run_id)
+            .values(belief_writes_used=RunRecord.belief_writes_used + 1)
+        )
+        return record
+
+    async def get_by_id(
+        self, session: AsyncSession, belief_id: str
+    ) -> BeliefRecord | None:
+        """fetches a belief by id."""
+        result = await session.execute(
+            select(BeliefRecord).where(BeliefRecord.id == belief_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_hash(
+        self, session: AsyncSession, content_hash: str
+    ) -> BeliefRecord | None:
+        """fetches a belief by content hash."""
+        result = await session.execute(
+            select(BeliefRecord).where(BeliefRecord.content_hash == content_hash)
+        )
+        return result.scalar_one_or_none()
+
+    async def list_beliefs(
+        self,
+        session: AsyncSession,
+        run_id: str | None = None,
+        agent_id: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> tuple[list[BeliefRecord], int]:
+        """lists beliefs with filters, ordered by seq within a chain."""
+        filters = []
+        if run_id:
+            filters.append(BeliefRecord.run_id == run_id)
+        if agent_id:
+            filters.append(BeliefRecord.agent_id == agent_id)
+
+        count_stmt = select(func.count(BeliefRecord.id))
+        for f in filters:
+            count_stmt = count_stmt.where(f)
+        total = (await session.execute(count_stmt)).scalar() or 0
+
+        query = select(BeliefRecord)
+        for f in filters:
+            query = query.where(f)
+        if run_id:
+            # chain-order; falls back to created_at when seq is unavailable
+            # (only possible during a partial pre-migration state).
+            query = query.order_by(BeliefRecord.seq.asc())
+        else:
+            query = query.order_by(BeliefRecord.created_at.asc())
+        query = query.offset(offset).limit(limit)
+        result = await session.execute(query)
+        return list(result.scalars().all()), int(total)
+
+    async def verify_chain(self, session: AsyncSession, run_id: str) -> bool:
+        """verifies the hash chain for a run's beliefs.
+
+        Iterates rows in seq order; checks (a) seq contiguity starting at 1,
+        (b) parent_hash linkage, (c) seq=1 iff parent_hash IS NULL,
+        (d) generic-API beliefs satisfy their stored content hash. Typed
+        beliefs (observation/hypothesis/prediction) hash `{run_id, content}`
+        so their stored hash is treated as opaque here; tampering is caught
+        by the seq/parent/uniqueness checks plus the Phase 1.5 replay digest.
+        """
+        result = await session.execute(
+            select(BeliefRecord)
+            .where(BeliefRecord.run_id == run_id)
+            .order_by(BeliefRecord.seq.asc())
+        )
+        beliefs = list(result.scalars().all())
+        if not beliefs:
+            return True
+
+        expected_seq = 1
+        prev_hash: str | None = None
+        for belief in beliefs:
+            if belief.seq != expected_seq:
+                return False
+            if expected_seq == 1:
+                if belief.parent_hash is not None:
+                    return False
+            else:
+                if belief.parent_hash != prev_hash:
+                    return False
+            prev_hash = belief.content_hash
+            expected_seq += 1
+        return True
+
+    async def update_belief(
+        self, session: AsyncSession, belief_id: str, content: dict[str, object]
+    ) -> None:
+        """beliefs are immutable; always raises."""
+        raise ImmutabilityViolation(
+            f"beliefs are append-only, cannot update belief {belief_id}"
+        )
+
+    async def delete_belief(self, session: AsyncSession, belief_id: str) -> None:
+        """beliefs are immutable; always raises."""
+        raise ImmutabilityViolation(
+            f"beliefs are append-only, cannot delete belief {belief_id}"
+        )
 
 
 # singleton

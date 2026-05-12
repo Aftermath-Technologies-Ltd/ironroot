@@ -8,10 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.api.deps import get_db_session
-from ironroot.cognition.memory.belief_service import (
-    get_belief_service,
-    get_contradiction_service,
-)
+from ironroot.beliefs import get_belief_service, get_contradiction_service
 from ironroot.domain.errors import ImmutabilityViolation
 
 router = APIRouter()

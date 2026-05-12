@@ -11,7 +11,7 @@ class TestBeliefImmutability:
 
     def test_update_raises_immutability_violation(self) -> None:
         """update attempt raises ImmutabilityViolation."""
-        from ironroot.cognition.memory.belief_service import BeliefService
+        from ironroot.beliefs import BeliefService
 
         service = BeliefService()
 
@@ -28,7 +28,7 @@ class TestBeliefImmutability:
 
     def test_delete_raises_immutability_violation(self) -> None:
         """delete attempt raises ImmutabilityViolation."""
-        from ironroot.cognition.memory.belief_service import BeliefService
+        from ironroot.beliefs import BeliefService
 
         service = BeliefService()
 

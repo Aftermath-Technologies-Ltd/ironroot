@@ -8,7 +8,7 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ironroot.cognition.memory.belief_service import get_belief_service
+from ironroot.beliefs import get_belief_service
 from ironroot.domain.errors import GateFailed, NotFoundError
 from ironroot.domain.ids import generate_id
 from ironroot.storage.artifact_service import get_artifact_service
