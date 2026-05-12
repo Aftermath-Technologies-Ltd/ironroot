@@ -272,12 +272,17 @@ async def test_replay_gate_pass_then_tamper_then_fail_full_cycle(
     assert recheck["passed"] is True
     assert recheck["baseline_digest"] == sealed
 
-    # tamper: change content of the last row in place
+    # tamper: change content of the last WORK row in place. Gate-result
+    # rows (which Phase 2a.4 appends on every gate run) are excluded
+    # from the replay digest, so tampering them is a separate concern
+    # the integrity gate covers. To prove the replay gate notices
+    # research-content drift we tamper the latest lifecycle row.
     async with session_factory() as session:
         last = (
             await session.execute(
                 select(BeliefRecord)
                 .where(BeliefRecord.run_id == run_id)
+                .where(BeliefRecord.belief_type == "lifecycle")
                 .order_by(BeliefRecord.seq.desc())
                 .limit(1)
             )

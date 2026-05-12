@@ -57,19 +57,34 @@ class _BeliefDigestRow(Protocol):
 _ROW_FIELD_SEP = b"\x00"
 _ROW_SEP = b"\n"
 
+# Belief types written *by the gate suite itself*. Including these in the
+# replay digest would mean every gate run mutates the digest it's about
+# to verify, defeating the purpose. The integrity gate catches tampering
+# in these rows separately, and each GATE_RESULT belief is signed by its
+# own input_digest field.
+_GATE_AUDIT_TYPES: frozenset[str] = frozenset({"gate_result", "violation"})
 
-def compute_chain_digest_from_rows(rows: list[_BeliefDigestRow]) -> str:
+
+def compute_chain_digest_from_rows(
+    rows: list[_BeliefDigestRow], *, strict_seq: bool = True
+) -> str:
     """canonical sha256 of a chain, ordered by seq.
 
-    The input MUST already be in seq order. Rows with a non-monotonic
-    seq are rejected; callers should fix the chain before calling. We
-    don't sort here on purpose: the gate must surface ordering
-    anomalies, not silently paper over them.
+    The input MUST already be in seq order. When ``strict_seq`` is True
+    (the default), rows with a non-monotonic seq are rejected; callers
+    should fix the chain before calling. We don't sort here on purpose:
+    the gate must surface ordering anomalies, not silently paper over
+    them.
+
+    When ``strict_seq`` is False, seq values may have gaps (used by the
+    replay gate after filtering out gate-audit rows). Each row's seq is
+    still part of its digest payload so swapping two rows is still
+    caught.
     """
     parts: list[bytes] = []
     expected = 1
     for row in rows:
-        if row.seq != expected:
+        if strict_seq and row.seq != expected:
             raise ValueError(
                 f"chain rows out of order: expected seq={expected}, got "
                 f"seq={row.seq}. Fix the chain or use the integrity gate "
@@ -97,12 +112,24 @@ async def compute_chain_digest(session: AsyncSession, run_id: str) -> str:
     chain has no rows. Callers that want to distinguish empty from
     non-empty can check the chain length separately; the digest itself
     is well-defined for both cases.
+
+    Belief rows whose ``belief_type`` is in ``_GATE_AUDIT_TYPES``
+    (``gate_result``, ``violation``) are excluded from the digest. The
+    gate suite itself writes those rows, so including them would mean
+    every gate run changes the digest the next replay gate is about to
+    verify. The integrity gate plus each ``GATE_RESULT`` belief's own
+    ``input_digest`` cover those rows independently.
     """
     result = await session.execute(
         select(BeliefRecord).where(BeliefRecord.run_id == run_id).order_by(BeliefRecord.seq.asc())
     )
     rows = list(result.scalars().all())
-    return compute_chain_digest_from_rows(rows)  # type: ignore[arg-type]
+    work_rows = [r for r in rows if r.belief_type not in _GATE_AUDIT_TYPES]
+    if work_rows and work_rows[0].seq == 1 and len(work_rows) == len(rows):
+        # Fast path: no gate-audit rows present, original strict-seq
+        # contract holds — keep the stronger check for the common case.
+        return compute_chain_digest_from_rows(work_rows, strict_seq=True)  # type: ignore[arg-type]
+    return compute_chain_digest_from_rows(work_rows, strict_seq=False)  # type: ignore[arg-type]
 
 
 # ----------------------------------------------------------------------

@@ -891,6 +891,17 @@ class BeliefService:
         event.listen(sync_session, "after_rollback", _release)
         event.listen(sync_session, "after_soft_rollback", _release)
 
+        # `after_transaction_end` is the catch-all that fires for any
+        # SessionTransaction ending — including the implicit rollback
+        # AsyncSession.close() issues when an `async with` block exits
+        # without commit. We restrict to the root transaction (no parent)
+        # so nested savepoints don't release the chain lock prematurely.
+        def _release_if_root(_session: Any, transaction: Any) -> None:
+            if getattr(transaction, "parent", None) is None:
+                _release()
+
+        event.listen(sync_session, "after_transaction_end", _release_if_root)
+
         try:
             yield
         except BaseException:

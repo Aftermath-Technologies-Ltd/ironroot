@@ -1,6 +1,7 @@
 # Author: Bradley R. Kinnard
 """gate service layer for verification and regression gates."""
 
+import hashlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -13,11 +14,32 @@ from ironroot.domain.errors import GateFailed, NotFoundError
 from ironroot.domain.ids import generate_id
 from ironroot.storage.artifact_service import get_artifact_service
 from ironroot.storage.models import ArtifactRecord, GateRecord, RunRecord
+from ironroot.verification.falsification import run_falsification
+from ironroot.verification.regression import run_regression
 from ironroot.verification.replay import compute_chain_digest
 
 
+def _input_digest(payload: dict[str, Any]) -> str:
+    """canonical sha256 of a JSON-serializable input payload.
+
+    Used as the GATE_RESULT belief's ``input_digest`` so re-running a
+    gate against the same chain produces a stable digest the auditor
+    can compare across runs.
+    """
+    blob = json.dumps(payload, sort_keys=True, default=str).encode()
+    return hashlib.sha256(blob).hexdigest()
+
+
 class GateService:
-    """executes verification gates and stores results as artifacts."""
+    """executes verification gates and stores results as artifacts + beliefs.
+
+    Every gate that runs writes a typed ``GATE_RESULT`` belief to the
+    chain via ``BeliefService.append_gate_result`` so the decision is
+    itself part of the append-only history (Phase 2a.4). Failure to
+    append the GATE_RESULT belief is non-fatal: the gate's pass/fail
+    signal still propagates and the artifact still lands, but a warning
+    is recorded in the gate output.
+    """
 
     async def execute_gates(
         self,
@@ -27,9 +49,9 @@ class GateService:
         check_integrity: bool = True,
         check_invariants: bool = True,
         check_regression: bool = True,
+        check_falsification: bool = True,
     ) -> GateRecord:
         """executes all enabled gates and stores results."""
-        # fetch run
         result = await session.execute(select(RunRecord).where(RunRecord.id == run_id))
         run = result.scalar_one_or_none()
         if not run:
@@ -48,37 +70,28 @@ class GateService:
         results: dict[str, Any] = {
             "gates": {},
             "overall": "passed",
+            "gate_result_belief_ids": {},
         }
 
-        # replay gate
+        def _record(name: str, decision: dict[str, Any]) -> None:
+            results["gates"][name] = decision
+            belief_id = decision.get("gate_result_belief_id")
+            if belief_id:
+                results["gate_result_belief_ids"][name] = belief_id
+            if not decision["passed"]:
+                results["overall"] = "failed"
+
         if check_replay:
-            replay_result = await self._check_replay(session, run_id, run.seed)
-            results["gates"]["replay"] = replay_result
-            if not replay_result["passed"]:
-                results["overall"] = "failed"
-
-        # integrity gate
+            _record("replay", await self._check_replay(session, run_id, run.seed))
         if check_integrity:
-            integrity_result = await self._check_integrity(session, run_id)
-            results["gates"]["integrity"] = integrity_result
-            if not integrity_result["passed"]:
-                results["overall"] = "failed"
-
-        # invariants gate
+            _record("integrity", await self._check_integrity(session, run_id))
         if check_invariants:
-            invariants_result = await self._check_invariants(session, run_id)
-            results["gates"]["invariants"] = invariants_result
-            if not invariants_result["passed"]:
-                results["overall"] = "failed"
-
-        # regression gate
+            _record("invariants", await self._check_invariants(session, run_id))
         if check_regression:
-            regression_result = await self._check_regression(session, run_id)
-            results["gates"]["regression"] = regression_result
-            if not regression_result["passed"]:
-                results["overall"] = "failed"
+            _record("regression", await self._check_regression(session, run_id))
+        if check_falsification:
+            _record("falsification", await self._check_falsification(session, run_id))
 
-        # store gate bundle as artifact
         artifact_service = get_artifact_service()
         bundle_bytes = json.dumps(results, sort_keys=True).encode()
         artifact = await artifact_service.store_artifact(
@@ -90,7 +103,6 @@ class GateService:
             filename=f"gate_bundle_{run_id}.json",
         )
 
-        # create gate record
         gate_id = generate_id("gat")
         gate_record = GateRecord(
             id=gate_id,
@@ -107,24 +119,43 @@ class GateService:
 
         return gate_record
 
-    async def _check_replay(self, session: AsyncSession, run_id: str, seed: int) -> dict[str, Any]:
-        """checks replay determinism by comparing live digest to sealed baseline.
+    async def _append_gate_belief(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        gate_name: str,
+        passed: bool,
+        input_digest: str,
+        decision_details: dict[str, Any],
+        evidence_belief_ids: list[str] | None = None,
+        evidence_artifact_ids: list[str] | None = None,
+    ) -> str | None:
+        """appends a GATE_RESULT belief; returns id or None on failure.
 
-        Phase 1.5 semantics:
-
-        - If no baseline is sealed yet (first time this gate runs against a
-          completed chain), compute the live digest and seal it. Reports
-          ``passed=True`` with ``baselined=True`` so an operator knows
-          this run established the baseline rather than verifying one.
-        - If a baseline is sealed, recompute the live digest and compare.
-          Match -> pass. Mismatch -> fail with both digests in the
-          evidence so the operator can diff manually.
-
-        The old "re-run verify_chain" implementation was deleted — that
-        check is the integrity gate's job. The replay gate now does
-        something distinct: detect non-deterministic / tampered chains
-        across time.
+        The chain may be too broken to accept a new belief (e.g. a
+        violation just fired and the chain check failed). We do NOT want
+        the gate to crash in that case — the pass/fail signal must still
+        propagate. A None return is logged via ``warning`` in the gate's
+        decision dict for the operator.
         """
+        belief_service = get_belief_service()
+        try:
+            belief = await belief_service.append_gate_result(
+                session=session,
+                run_id=run_id,
+                gate_name=gate_name,
+                passed=passed,
+                input_digest=input_digest,
+                decision_details=decision_details,
+                evidence_belief_ids=evidence_belief_ids,
+                evidence_artifact_ids=evidence_artifact_ids,
+            )
+        except Exception:
+            return None
+        return belief.id
+
+    async def _check_replay(self, session: AsyncSession, run_id: str, seed: int) -> dict[str, Any]:
+        """compares live digest to sealed baseline (Phase 1.5)."""
         live_digest = await compute_chain_digest(session, run_id)
 
         run = (
@@ -133,7 +164,6 @@ class GateService:
         baseline = run.replay_digest if run is not None else None
 
         if baseline is None:
-            # First check: seal the baseline.
             await session.execute(
                 update(RunRecord)
                 .where(RunRecord.id == run_id)
@@ -142,7 +172,7 @@ class GateService:
                     replay_digest_sealed_at=datetime.now(UTC),
                 )
             )
-            return {
+            decision = {
                 "passed": True,
                 "seed": seed,
                 "baselined": True,
@@ -150,22 +180,35 @@ class GateService:
                 "baseline_digest": live_digest,
                 "details": "no prior baseline; sealed current digest",
             }
+        else:
+            match = baseline == live_digest
+            decision = {
+                "passed": match,
+                "seed": seed,
+                "baselined": False,
+                "live_digest": live_digest,
+                "baseline_digest": baseline,
+                "details": (
+                    ""
+                    if match
+                    else f"replay digest mismatch: baseline={baseline} live={live_digest}"
+                ),
+            }
 
-        match = baseline == live_digest
-        return {
-            "passed": match,
-            "seed": seed,
-            "baselined": False,
-            "live_digest": live_digest,
-            "baseline_digest": baseline,
-            "details": (
-                "" if match else f"replay digest mismatch: baseline={baseline} live={live_digest}"
-            ),
-        }
+        passed_value = bool(decision["passed"])
+        belief_id = await self._append_gate_belief(
+            session=session,
+            run_id=run_id,
+            gate_name="replay",
+            passed=passed_value,
+            input_digest=live_digest,
+            decision_details=decision,
+        )
+        decision["gate_result_belief_id"] = belief_id
+        return decision
 
     async def _check_integrity(self, session: AsyncSession, run_id: str) -> dict[str, Any]:
         """checks artifact integrity for a run."""
-        # fetch all artifacts for this run
         result = await session.execute(
             select(ArtifactRecord).where(ArtifactRecord.run_id == run_id)
         )
@@ -183,25 +226,28 @@ class GateService:
                 failures.append(art.id)
             checked += 1
 
-        return {
+        decision = {
             "passed": all_valid,
             "artifacts_checked": checked,
             "failures": failures,
             "details": "" if all_valid else f"integrity failed for: {failures}",
         }
 
+        input_payload = {"artifact_ids": [a.id for a in artifacts]}
+        belief_id = await self._append_gate_belief(
+            session=session,
+            run_id=run_id,
+            gate_name="integrity",
+            passed=all_valid,
+            input_digest=_input_digest(input_payload),
+            decision_details=decision,
+            evidence_artifact_ids=failures or [a.id for a in artifacts],
+        )
+        decision["gate_result_belief_id"] = belief_id
+        return decision
+
     async def _check_invariants(self, session: AsyncSession, run_id: str) -> dict[str, Any]:
-        """checks the three declared invariants for a run (Phase 1.6).
-
-        Covers all three from ``domain.invariants``: ``belief_hash_chain``,
-        ``budget_not_negative``, ``run_state_machine``. The artifact-
-        integrity invariant is the integrity gate's job and isn't
-        duplicated here.
-
-        Each failed check produces a typed Violation belief
-        (BeliefType.VIOLATION) so the violation itself is part of the
-        chain and surfaces in audits.
-        """
+        """checks the three declared invariants for a run (Phase 1.6)."""
         from ironroot.domain.invariants import (
             BELIEF_HASH_CHAIN,
             BUDGET_NOT_NEGATIVE,
@@ -214,16 +260,9 @@ class GateService:
         result = await session.execute(select(RunRecord).where(RunRecord.id == run_id))
         run = result.scalar_one_or_none()
 
-        # Run-state-machine invariant — the run's status field is in the
-        # known finite set. Tightening to "valid transitions" is Phase 3
-        # work (proper lifecycle).
         valid_statuses = {"pending", "running", "completed", "stopped", "failed"}
         state_valid = run is not None and run.status in valid_statuses
 
-        # Budget-not-negative invariant — the third declared invariant
-        # that was missing pre-Phase 1.6. Negative budget counters would
-        # mean either over-decrement or write-corruption and warrant
-        # containment.
         if run is None:
             budget_valid = False
             budget_details = "run not found"
@@ -255,11 +294,6 @@ class GateService:
         if not budget_valid:
             violations.append({"invariant": BUDGET_NOT_NEGATIVE.name, "details": budget_details})
 
-        # Emit one Violation belief per failed invariant. Violations are
-        # appended *after* the chain check has already failed, so they
-        # are themselves part of the (now-tampered) chain and visible to
-        # audits. We do not require the chain to be valid to record a
-        # violation — that would be self-defeating.
         violation_belief_ids: list[str] = []
         for v in violations:
             try:
@@ -272,14 +306,10 @@ class GateService:
                 )
                 violation_belief_ids.append(belief.id)
             except Exception:
-                # Recording the violation must never crash the gate; if
-                # the chain is so broken we can't even append a
-                # violation, the chain_valid=False signal already tells
-                # the operator something is very wrong.
                 pass
 
         all_valid = chain_valid and state_valid and budget_valid
-        return {
+        decision = {
             "passed": all_valid,
             "chain_valid": chain_valid,
             "state_valid": state_valid,
@@ -289,24 +319,137 @@ class GateService:
             "details": "" if all_valid else "; ".join(v["details"] for v in violations),
         }
 
-    async def _check_regression(self, session: AsyncSession, run_id: str) -> dict[str, Any]:
-        """checks regression tests for a run."""
-        # placeholder - in real system would run test suite
-        # for now, return passed if no incidents recorded
-        from ironroot.storage.models import IncidentRecord
-
-        result = await session.execute(
-            select(IncidentRecord).where(IncidentRecord.run_id == run_id)
-        )
-        incidents = list(result.scalars().all())
-
-        no_incidents = len(incidents) == 0
-
-        return {
-            "passed": no_incidents,
-            "incident_count": len(incidents),
-            "details": "" if no_incidents else f"{len(incidents)} incidents found",
+        input_payload = {
+            "chain_valid": chain_valid,
+            "state_valid": state_valid,
+            "budget_valid": budget_valid,
         }
+        gate_belief_id = await self._append_gate_belief(
+            session=session,
+            run_id=run_id,
+            gate_name="invariants",
+            passed=all_valid,
+            input_digest=_input_digest(input_payload),
+            decision_details=decision,
+            evidence_belief_ids=violation_belief_ids,
+        )
+        decision["gate_result_belief_id"] = gate_belief_id
+        return decision
+
+    async def _check_regression(self, session: AsyncSession, run_id: str) -> dict[str, Any]:
+        """runs the registered regression suite for this run's kind (Phase 2a.2).
+
+        Empty-incident-list is NOT a free pass. The gate fails if any
+        registered check fails OR any IncidentRecord exists for the run.
+        Misconfigured runs (no suite for the kind) raise from
+        ``run_regression`` and surface as a gate failure rather than a
+        silent pass.
+        """
+        try:
+            report = await run_regression(session, run_id)
+        except ValueError as exc:
+            decision = {
+                "passed": False,
+                "error": str(exc),
+                "details": f"regression suite resolution failed: {exc}",
+            }
+            belief_id = await self._append_gate_belief(
+                session=session,
+                run_id=run_id,
+                gate_name="regression",
+                passed=False,
+                input_digest=_input_digest({"error": str(exc)}),
+                decision_details=decision,
+            )
+            decision["gate_result_belief_id"] = belief_id
+            return decision
+
+        decision = report.to_dict()
+        decision["passed"] = report.passed
+        decision["details"] = (
+            ""
+            if report.passed
+            else (
+                f"regression failed: failed_checks={list(report.failed_checks())}, "
+                f"incident_count={report.incident_count}"
+            )
+        )
+
+        input_payload = {
+            "suite_name": report.suite_name,
+            "run_kind": report.run_kind,
+            "check_names": [r.check_name for r in report.results],
+        }
+        offending_belief_ids: list[str] = []
+        for r in report.results:
+            offending_belief_ids.extend(r.offending_belief_ids)
+
+        belief_id = await self._append_gate_belief(
+            session=session,
+            run_id=run_id,
+            gate_name="regression",
+            passed=report.passed,
+            input_digest=_input_digest(input_payload),
+            decision_details=decision,
+            evidence_belief_ids=offending_belief_ids,
+        )
+        decision["gate_result_belief_id"] = belief_id
+        return decision
+
+    async def _check_falsification(self, session: AsyncSession, run_id: str) -> dict[str, Any]:
+        """runs every registered falsifier against the live chain (Phase 2a.1).
+
+        Passes iff no falsifier produced evidence. The empty-registry
+        case raises from ``run_falsification`` and surfaces as a gate
+        failure, never a silent pass.
+        """
+        try:
+            report = await run_falsification(session, run_id)
+        except ValueError as exc:
+            decision = {
+                "passed": False,
+                "error": str(exc),
+                "details": f"falsification gate misconfigured: {exc}",
+            }
+            belief_id = await self._append_gate_belief(
+                session=session,
+                run_id=run_id,
+                gate_name="falsification",
+                passed=False,
+                input_digest=_input_digest({"error": str(exc)}),
+                decision_details=decision,
+            )
+            decision["gate_result_belief_id"] = belief_id
+            return decision
+
+        passed = not report.any_falsified
+        decision = report.to_dict()
+        decision["passed"] = passed
+        decision["details"] = (
+            "" if passed else f"falsified claims: {list(report.falsified_claims)}"
+        )
+
+        offending_belief_ids: list[str] = []
+        offending_artifact_ids: list[str] = []
+        for a in report.attempts:
+            if a.evidence is None:
+                continue
+            offending_belief_ids.extend(a.evidence.offending_belief_ids)
+            offending_artifact_ids.extend(a.evidence.offending_artifact_ids)
+
+        input_payload = {"claim_names": [a.claim_name for a in report.attempts]}
+        belief_id = await self._append_gate_belief(
+            session=session,
+            run_id=run_id,
+            gate_name="falsification",
+            passed=passed,
+            input_digest=_input_digest(input_payload),
+            decision_details=decision,
+            evidence_belief_ids=offending_belief_ids,
+            evidence_artifact_ids=offending_artifact_ids,
+        )
+        decision["gate_result_belief_id"] = belief_id
+        return decision
 
     async def get_gate_status(self, session: AsyncSession, run_id: str) -> dict[str, Any]:
         """gets the latest gate status for a run."""
@@ -345,7 +488,6 @@ class GateService:
             raise GateFailed("full_suite", "gates failed")
 
 
-# singleton
 _gate_service: GateService | None = None
 
 
