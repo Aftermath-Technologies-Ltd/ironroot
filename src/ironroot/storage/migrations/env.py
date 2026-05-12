@@ -17,8 +17,8 @@ from ironroot.storage.postgres import Base
 config = context.config
 settings = get_settings()
 
-# override sqlalchemy.url from settings
-config.set_main_option("sqlalchemy.url", settings.database_url.replace("+asyncpg", ""))
+# override sqlalchemy.url from settings; keep +asyncpg for online async mode.
+config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

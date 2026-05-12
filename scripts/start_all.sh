@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Bring up infrastructure (Postgres, Redis) and initialize schema.
-set -e
+# Bring up infrastructure (Postgres, Redis) and migrate the schema.
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -21,20 +21,13 @@ until docker-compose exec -T redis redis-cli ping > /dev/null 2>&1; do
     sleep 2
 done
 
-if [ -z "$VIRTUAL_ENV" ]; then
+if [ -z "${VIRTUAL_ENV:-}" ]; then
+    # shellcheck disable=SC1091
     source .venv/bin/activate
 fi
 
-python -c "
-from ironroot.storage.postgres import engine, Base
-from ironroot.storage.models import *
-import asyncio
-
-async def setup():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-
-asyncio.run(setup())
-"
+# Migrations are the only allowed way to create or evolve the schema.
+# `Base.metadata.create_all` is forbidden outside test fixtures.
+alembic upgrade head
 
 echo "Infrastructure ready. Start the API with: ./scripts/run_once.sh"
