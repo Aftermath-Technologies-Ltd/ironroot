@@ -34,35 +34,30 @@ def _run_guard(tmp_path: Path | None = None) -> subprocess.CompletedProcess[str]
 class TestGuardOnCurrentTree:
     def test_current_tree_passes(self) -> None:
         result = _run_guard()
-        assert result.returncode == 0, (
-            f"guard failed on current tree:\nstdout={result.stdout}\nstderr={result.stderr}"
-        )
+        assert (
+            result.returncode == 0
+        ), f"guard failed on current tree:\nstdout={result.stdout}\nstderr={result.stderr}"
 
 
 class TestGuardLogic:
     """Synthesize a tiny tree and run the guard against it."""
 
-    def _make_fake_repo(self, tmp_path: Path, *, rng_in_experimental: bool, rng_in_core: bool) -> Path:
+    def _make_fake_repo(
+        self, tmp_path: Path, *, rng_in_experimental: bool, rng_in_core: bool
+    ) -> Path:
         src = tmp_path / "src" / "ironroot"
         (src / "experimental").mkdir(parents=True)
-        (src / "experimental" / "__init__.py").write_text(
-            textwrap.dedent(
-                '''
+        (src / "experimental" / "__init__.py").write_text(textwrap.dedent("""
                 EXPERIMENTAL_MODULE_PREFIXES = ("agi",)
 
                 def is_experimental(m: str) -> bool:
                     return any(m == p or m.startswith(p + ".") for p in EXPERIMENTAL_MODULE_PREFIXES)
-                '''
-            ).strip()
-            + "\n"
-        )
+                """).strip() + "\n")
         (src / "__init__.py").write_text("")
 
         # Always-clean core module.
         (src / "domain.py").write_text(
-            "# Author: test\n"
-            "def hello() -> str:\n"
-            "    return 'no rng here'\n"
+            "# Author: test\n" "def hello() -> str:\n" "    return 'no rng here'\n"
         )
 
         agi = src / "agi"
@@ -70,16 +65,12 @@ class TestGuardLogic:
         (agi / "__init__.py").write_text("")
         if rng_in_experimental:
             (agi / "tools.py").write_text(
-                "import random\n\n"
-                "def pick() -> int:\n"
-                "    return random.randint(0, 9)\n"
+                "import random\n\n" "def pick() -> int:\n" "    return random.randint(0, 9)\n"
             )
 
         if rng_in_core:
             (src / "verification.py").write_text(
-                "import random\n\n"
-                "def gate() -> int:\n"
-                "    return random.randint(0, 9)\n"
+                "import random\n\n" "def gate() -> int:\n" "    return random.randint(0, 9)\n"
             )
 
         # Drop a copy of the guard script into the fake repo at the
@@ -129,6 +120,6 @@ class TestGuardLogic:
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 1, (
-            f"guard accepted {snippet!r} in non-experimental code:\n{result.stdout}\n{result.stderr}"
-        )
+        assert (
+            result.returncode == 1
+        ), f"guard accepted {snippet!r} in non-experimental code:\n{result.stdout}\n{result.stderr}"

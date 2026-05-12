@@ -3,7 +3,7 @@
 
 import hashlib
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -11,6 +11,7 @@ import httpx
 @dataclass
 class Paper:
     """A paper from Semantic Scholar."""
+
     paper_id: str
     title: str
     abstract: str | None
@@ -25,6 +26,7 @@ class Paper:
 @dataclass
 class SearchResult:
     """Search results from Semantic Scholar."""
+
     papers: list[Paper]
     total: int
     query: str
@@ -85,17 +87,23 @@ class SemanticScholarSource:
 
         papers = []
         for item in data.get("data", []):
-            papers.append(Paper(
-                paper_id=item["paperId"],
-                title=item.get("title", ""),
-                abstract=item.get("abstract"),
-                year=item.get("year"),
-                authors=[a.get("name", "") for a in item.get("authors", [])],
-                citation_count=item.get("citationCount", 0),
-                url=item.get("url", f"https://www.semanticscholar.org/paper/{item['paperId']}"),
-                venue=item.get("venue"),
-                fields_of_study=[f.get("category", "") for f in item.get("fieldsOfStudy", []) if f],
-            ))
+            papers.append(
+                Paper(
+                    paper_id=item["paperId"],
+                    title=item.get("title", ""),
+                    abstract=item.get("abstract"),
+                    year=item.get("year"),
+                    authors=[a.get("name", "") for a in item.get("authors", [])],
+                    citation_count=item.get("citationCount", 0),
+                    url=item.get(
+                        "url", f"https://www.semanticscholar.org/paper/{item['paperId']}"
+                    ),
+                    venue=item.get("venue"),
+                    fields_of_study=[
+                        f.get("category", "") for f in item.get("fieldsOfStudy", []) if f
+                    ],
+                )
+            )
 
         # Create hash of response for verification
         data_hash = hashlib.sha256(str(data).encode()).hexdigest()[:16]
@@ -105,7 +113,7 @@ class SemanticScholarSource:
             total=data.get("total", len(papers)),
             query=query,
             data_hash=data_hash,
-            retrieved_at=datetime.now(timezone.utc).isoformat(),
+            retrieved_at=datetime.now(UTC).isoformat(),
         )
 
     async def get_paper(self, paper_id: str) -> Paper | None:
@@ -145,21 +153,25 @@ class SemanticScholarSource:
         for item in data.get("data", []):
             citing = item.get("citingPaper", {})
             if citing:
-                papers.append(Paper(
-                    paper_id=citing["paperId"],
-                    title=citing.get("title", ""),
-                    abstract=citing.get("abstract"),
-                    year=citing.get("year"),
-                    authors=[a.get("name", "") for a in citing.get("authors", [])],
-                    citation_count=citing.get("citationCount", 0),
-                    url=citing.get("url", ""),
-                ))
+                papers.append(
+                    Paper(
+                        paper_id=citing["paperId"],
+                        title=citing.get("title", ""),
+                        abstract=citing.get("abstract"),
+                        year=citing.get("year"),
+                        authors=[a.get("name", "") for a in citing.get("authors", [])],
+                        citation_count=citing.get("citationCount", 0),
+                        url=citing.get("url", ""),
+                    )
+                )
         return papers
 
     async def health_check(self) -> bool:
         """Check if API is accessible."""
         try:
-            response = await self._client.get("/paper/search", params={"query": "test", "limit": 1})
+            response = await self._client.get(
+                "/paper/search", params={"query": "test", "limit": 1}
+            )
             return response.status_code == 200
         except Exception:
             return False

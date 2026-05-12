@@ -179,13 +179,13 @@ class DelayedOutcomeSource(RealitySource):
             peak = 1.0
             max_dd = 0.0
             for r in daily_returns:
-                cumulative *= (1 + r)
+                cumulative *= 1 + r
                 peak = max(peak, cumulative)
                 dd = (peak - cumulative) / peak
                 max_dd = max(max_dd, dd)
 
             total_return = cumulative - 1
-            vol = statistics.stdev(daily_returns) * (252 ** 0.5)
+            vol = statistics.stdev(daily_returns) * (252**0.5)
             sharpe = (total_return - 0.02) / vol if vol > 0 else 0
 
             self._outcome_data = {
@@ -216,5 +216,7 @@ class DelayedOutcomeSource(RealitySource):
                 "day_7_retention": retained_7 / self._sample_size,
                 "day_30_retention": retained_30 / self._sample_size,
                 "churn_rate": 1 - (retained_30 / self._sample_size),
-                "ltv_ratio": (retained_30 / self._sample_size) * 50 / self._baseline_data["acquisition_cost"],
+                "ltv_ratio": (retained_30 / self._sample_size)
+                * 50
+                / self._baseline_data["acquisition_cost"],
             }

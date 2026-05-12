@@ -11,19 +11,13 @@ The system:
 This is the ultimate AGI capability test.
 """
 
-import asyncio
 import hashlib
 import json
 import random
 import statistics
-from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
-from urllib.parse import urlencode
-
-import httpx
-from scipy import stats as scipy_stats
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,6 +27,7 @@ from ironroot.storage.artifact_service import get_artifact_service
 
 class HypothesisStatus(str, Enum):
     """Status of a hypothesis in the research cycle."""
+
     PROPOSED = "proposed"
     UNDER_TEST = "under_test"
     SUPPORTED = "supported"
@@ -43,6 +38,7 @@ class HypothesisStatus(str, Enum):
 
 class DataSourceType(str, Enum):
     """Types of external data sources."""
+
     PUBLIC_API = "public_api"
     STATISTICAL_DATABASE = "statistical_database"
     SCIENTIFIC_LITERATURE = "scientific_literature"
@@ -53,6 +49,7 @@ class DataSourceType(str, Enum):
 @dataclass
 class ResearchQuestion:
     """A self-generated research question."""
+
     question_id: str
     question_text: str
     domain: str
@@ -68,6 +65,7 @@ class ResearchQuestion:
 @dataclass
 class Hypothesis:
     """A falsifiable hypothesis about the external world."""
+
     hypothesis_id: str
     question_id: str
     statement: str
@@ -85,6 +83,7 @@ class Hypothesis:
 @dataclass
 class ExternalDataQuery:
     """A query to external data sources."""
+
     query_id: str
     hypothesis_id: str
     source_type: DataSourceType
@@ -100,6 +99,7 @@ class ExternalDataQuery:
 @dataclass
 class EvaluationProtocol:
     """Self-designed evaluation protocol."""
+
     protocol_id: str
     question_id: str
     description: str
@@ -115,6 +115,7 @@ class EvaluationProtocol:
 @dataclass
 class ExperimentResult:
     """Result of running an experiment under the protocol."""
+
     result_id: str
     protocol_id: str
     hypothesis_id: str
@@ -130,6 +131,7 @@ class ExperimentResult:
 @dataclass
 class ResearchCampaignReport:
     """Complete report of an autonomous research campaign."""
+
     campaign_id: str
     started_at: str
     completed_at: str | None
@@ -223,7 +225,7 @@ class AutonomousResearchAgent:
         max_revision_depth: int = 3,
     ) -> ResearchCampaignReport:
         """Run a complete autonomous research campaign."""
-        started_at = datetime.now(timezone.utc).isoformat()
+        started_at = datetime.now(UTC).isoformat()
         campaign_id = generate_id("research")
 
         print(f"\n{'='*80}")
@@ -275,27 +277,32 @@ class AutonomousResearchAgent:
             self.questions[question.question_id] = question
 
             print(f"  Q{i+1}: [{domain}] {question.question_text[:60]}...")
-            print(f"       Testability: {question.testability_score:.2f}, Novelty: {question.novelty_score:.2f}")
+            print(
+                f"       Testability: {question.testability_score:.2f}, Novelty: {question.novelty_score:.2f}"
+            )
 
         # Store questions artifact
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "questions": [
-                    {
-                        "question_id": q.question_id,
-                        "question_text": q.question_text,
-                        "domain": q.domain,
-                        "sub_questions": q.sub_questions,
-                        "testability_score": q.testability_score,
-                        "novelty_score": q.novelty_score,
-                        "importance_score": q.importance_score,
-                        "generation_rationale": q.generation_rationale,
-                        "parent_question_id": q.parent_question_id,
-                    }
-                    for q in self.questions.values()
-                ]
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "questions": [
+                        {
+                            "question_id": q.question_id,
+                            "question_text": q.question_text,
+                            "domain": q.domain,
+                            "sub_questions": q.sub_questions,
+                            "testability_score": q.testability_score,
+                            "novelty_score": q.novelty_score,
+                            "importance_score": q.importance_score,
+                            "generation_rationale": q.generation_rationale,
+                            "parent_question_id": q.parent_question_id,
+                        }
+                        for q in self.questions.values()
+                    ]
+                },
+                indent=2,
+            ).encode(),
             artifact_type="research_questions",
             created_by="autonomous_research_agent",
             run_id=run_id,
@@ -364,9 +371,9 @@ class AutonomousResearchAgent:
 
         # Generate sub-questions
         sub_questions = [
-            f"What data sources are needed to answer this?",
-            f"What confounders should be controlled for?",
-            f"What is the null hypothesis?",
+            "What data sources are needed to answer this?",
+            "What confounders should be controlled for?",
+            "What is the null hypothesis?",
         ]
 
         # Compute scores
@@ -377,7 +384,9 @@ class AutonomousResearchAgent:
 
         importance = self.rng.uniform(0.3, 0.9)
 
-        rationale = f"Generated from {domain} domain patterns, seeking to understand {variables['X']}"
+        rationale = (
+            f"Generated from {domain} domain patterns, seeking to understand {variables['X']}"
+        )
 
         return ResearchQuestion(
             question_id=generate_id("question"),
@@ -388,20 +397,68 @@ class AutonomousResearchAgent:
             novelty_score=round(novelty, 3),
             importance_score=round(importance, 3),
             generation_rationale=rationale,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
     def _generate_variable(self, domain: str) -> str:
         """Generate a domain-appropriate variable name."""
         variables = {
-            "economic_indicators": ["GDP per capita", "unemployment rate", "inflation", "trade balance", "FDI inflows"],
-            "climate_patterns": ["temperature anomaly", "precipitation", "sea level", "CO2 concentration", "albedo"],
-            "social_dynamics": ["trust levels", "social mobility", "inequality", "polarization", "civic participation"],
-            "technological_adoption": ["smartphone penetration", "internet access", "renewable energy", "EV adoption", "AI usage"],
-            "biological_systems": ["population density", "birth rate", "mortality rate", "disease prevalence", "biodiversity"],
-            "information_flow": ["news velocity", "misinformation spread", "attention span", "content virality", "echo chamber effect"],
-            "resource_distribution": ["water access", "food security", "energy consumption", "land ownership", "wealth concentration"],
-            "behavioral_economics": ["loss aversion", "time discounting", "risk preference", "altruism", "reciprocity"],
+            "economic_indicators": [
+                "GDP per capita",
+                "unemployment rate",
+                "inflation",
+                "trade balance",
+                "FDI inflows",
+            ],
+            "climate_patterns": [
+                "temperature anomaly",
+                "precipitation",
+                "sea level",
+                "CO2 concentration",
+                "albedo",
+            ],
+            "social_dynamics": [
+                "trust levels",
+                "social mobility",
+                "inequality",
+                "polarization",
+                "civic participation",
+            ],
+            "technological_adoption": [
+                "smartphone penetration",
+                "internet access",
+                "renewable energy",
+                "EV adoption",
+                "AI usage",
+            ],
+            "biological_systems": [
+                "population density",
+                "birth rate",
+                "mortality rate",
+                "disease prevalence",
+                "biodiversity",
+            ],
+            "information_flow": [
+                "news velocity",
+                "misinformation spread",
+                "attention span",
+                "content virality",
+                "echo chamber effect",
+            ],
+            "resource_distribution": [
+                "water access",
+                "food security",
+                "energy consumption",
+                "land ownership",
+                "wealth concentration",
+            ],
+            "behavioral_economics": [
+                "loss aversion",
+                "time discounting",
+                "risk preference",
+                "altruism",
+                "reciprocity",
+            ],
         }
         return self.rng.choice(variables.get(domain, variables["economic_indicators"]))
 
@@ -441,21 +498,24 @@ class AutonomousResearchAgent:
         # Store hypotheses artifact
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "hypotheses": [
-                    {
-                        "hypothesis_id": h.hypothesis_id,
-                        "question_id": h.question_id,
-                        "statement": h.statement,
-                        "predictions": h.predictions,
-                        "falsification_criteria": h.falsification_criteria,
-                        "prior_probability": h.prior_probability,
-                        "current_probability": h.current_probability,
-                        "status": h.status.value,
-                    }
-                    for h in self.hypotheses.values()
-                ]
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "hypotheses": [
+                        {
+                            "hypothesis_id": h.hypothesis_id,
+                            "question_id": h.question_id,
+                            "statement": h.statement,
+                            "predictions": h.predictions,
+                            "falsification_criteria": h.falsification_criteria,
+                            "prior_probability": h.prior_probability,
+                            "current_probability": h.current_probability,
+                            "status": h.status.value,
+                        }
+                        for h in self.hypotheses.values()
+                    ]
+                },
+                indent=2,
+            ).encode(),
             artifact_type="hypotheses",
             created_by="autonomous_research_agent",
             run_id=run_id,
@@ -469,14 +529,14 @@ class AutonomousResearchAgent:
 
         # Generate hypothesis variants
         variants = [
-            f"There exists a positive correlation between the variables in question",
-            f"There exists a negative correlation between the variables in question",
-            f"There is no significant relationship (null hypothesis)",
-            f"The relationship is non-linear (threshold or saturation effects)",
-            f"The relationship is mediated by a third variable",
+            "There exists a positive correlation between the variables in question",
+            "There exists a negative correlation between the variables in question",
+            "There is no significant relationship (null hypothesis)",
+            "The relationship is non-linear (threshold or saturation effects)",
+            "The relationship is mediated by a third variable",
         ]
 
-        statement = self.rng.choice(variants[:3 + index])  # More variety with more hypotheses
+        statement = self.rng.choice(variants[: 3 + index])  # More variety with more hypotheses
 
         # Add specificity based on domain
         if "GDP" in question.question_text or "economic" in question.domain:
@@ -486,16 +546,16 @@ class AutonomousResearchAgent:
 
         # Generate predictions
         predictions = [
-            f"If this hypothesis is true, we should observe consistent effect sizes across samples",
-            f"If this hypothesis is true, the relationship should hold in out-of-sample data",
-            f"If this hypothesis is true, effect should persist after controlling for confounders",
+            "If this hypothesis is true, we should observe consistent effect sizes across samples",
+            "If this hypothesis is true, the relationship should hold in out-of-sample data",
+            "If this hypothesis is true, effect should persist after controlling for confounders",
         ]
 
         # Generate falsification criteria
         falsification_criteria = [
-            f"Effect size < 0.1 with 95% confidence would falsify this hypothesis",
-            f"Opposite sign in replication study would falsify this hypothesis",
-            f"Significant interaction with known confounder would require revision",
+            "Effect size < 0.1 with 95% confidence would falsify this hypothesis",
+            "Opposite sign in replication study would falsify this hypothesis",
+            "Significant interaction with known confounder would require revision",
         ]
 
         prior = 0.3 + self.rng.uniform(0, 0.4)  # Prior credence
@@ -512,7 +572,7 @@ class AutonomousResearchAgent:
             evidence_for=[],
             evidence_against=[],
             revision_history=[],
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
     async def _design_protocols(
@@ -525,27 +585,32 @@ class AutonomousResearchAgent:
             protocol = self._create_protocol(question)
             self.protocols[protocol.protocol_id] = protocol
 
-            print(f"  Protocol for Q[{q_id[:8]}]: {len(protocol.metrics)} metrics, {len(protocol.statistical_tests)} tests")
+            print(
+                f"  Protocol for Q[{q_id[:8]}]: {len(protocol.metrics)} metrics, {len(protocol.statistical_tests)} tests"
+            )
 
         # Store protocols artifact
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "protocols": [
-                    {
-                        "protocol_id": p.protocol_id,
-                        "question_id": p.question_id,
-                        "description": p.description,
-                        "metrics": p.metrics,
-                        "success_criteria": p.success_criteria,
-                        "data_requirements": p.data_requirements,
-                        "statistical_tests": p.statistical_tests,
-                        "sample_size_justification": p.sample_size_justification,
-                        "bias_mitigations": p.bias_mitigations,
-                    }
-                    for p in self.protocols.values()
-                ]
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "protocols": [
+                        {
+                            "protocol_id": p.protocol_id,
+                            "question_id": p.question_id,
+                            "description": p.description,
+                            "metrics": p.metrics,
+                            "success_criteria": p.success_criteria,
+                            "data_requirements": p.data_requirements,
+                            "statistical_tests": p.statistical_tests,
+                            "sample_size_justification": p.sample_size_justification,
+                            "bias_mitigations": p.bias_mitigations,
+                        }
+                        for p in self.protocols.values()
+                    ]
+                },
+                indent=2,
+            ).encode(),
             artifact_type="evaluation_protocols",
             created_by="autonomous_research_agent",
             run_id=run_id,
@@ -556,31 +621,74 @@ class AutonomousResearchAgent:
         """Create an evaluation protocol for a research question."""
         # Select appropriate metrics based on domain
         domain_metrics = {
-            "economic_indicators": ["correlation_coefficient", "regression_r2", "granger_causality_p", "effect_size_d"],
-            "climate_patterns": ["trend_slope", "seasonality_strength", "autocorrelation", "anomaly_zscore"],
-            "social_dynamics": ["network_centrality", "clustering_coefficient", "diffusion_rate", "homophily_index"],
-            "technological_adoption": ["adoption_rate", "saturation_level", "s_curve_fit", "chasm_indicator"],
-            "biological_systems": ["growth_rate", "carrying_capacity", "mortality_hazard", "biodiversity_index"],
-            "information_flow": ["propagation_speed", "decay_rate", "cascade_size", "echo_chamber_score"],
-            "resource_distribution": ["gini_coefficient", "efficiency_ratio", "scarcity_index", "conflict_correlation"],
-            "behavioral_economics": ["bias_magnitude", "elasticity", "framing_effect_size", "rationality_deviation"],
+            "economic_indicators": [
+                "correlation_coefficient",
+                "regression_r2",
+                "granger_causality_p",
+                "effect_size_d",
+            ],
+            "climate_patterns": [
+                "trend_slope",
+                "seasonality_strength",
+                "autocorrelation",
+                "anomaly_zscore",
+            ],
+            "social_dynamics": [
+                "network_centrality",
+                "clustering_coefficient",
+                "diffusion_rate",
+                "homophily_index",
+            ],
+            "technological_adoption": [
+                "adoption_rate",
+                "saturation_level",
+                "s_curve_fit",
+                "chasm_indicator",
+            ],
+            "biological_systems": [
+                "growth_rate",
+                "carrying_capacity",
+                "mortality_hazard",
+                "biodiversity_index",
+            ],
+            "information_flow": [
+                "propagation_speed",
+                "decay_rate",
+                "cascade_size",
+                "echo_chamber_score",
+            ],
+            "resource_distribution": [
+                "gini_coefficient",
+                "efficiency_ratio",
+                "scarcity_index",
+                "conflict_correlation",
+            ],
+            "behavioral_economics": [
+                "bias_magnitude",
+                "elasticity",
+                "framing_effect_size",
+                "rationality_deviation",
+            ],
         }
 
         metrics = domain_metrics.get(question.domain, domain_metrics["economic_indicators"])
 
         # Select statistical tests
-        tests = self.rng.sample([
-            "t_test",
-            "pearson_correlation",
-            "spearman_correlation",
-            "mann_whitney_u",
-            "kruskal_wallis",
-            "anova",
-            "chi_square",
-            "regression_ols",
-            "granger_causality",
-            "adf_stationarity",
-        ], k=min(4, self.rng.randint(2, 5)))
+        tests = self.rng.sample(
+            [
+                "t_test",
+                "pearson_correlation",
+                "spearman_correlation",
+                "mann_whitney_u",
+                "kruskal_wallis",
+                "anova",
+                "chi_square",
+                "regression_ols",
+                "granger_causality",
+                "adf_stationarity",
+            ],
+            k=min(4, self.rng.randint(2, 5)),
+        )
 
         # Success criteria
         success_criteria = {
@@ -593,15 +701,15 @@ class AutonomousResearchAgent:
         # Data requirements
         data_requirements = [
             f"Time series data for {question.domain} variables",
-            f"Cross-sectional data across multiple units",
-            f"Control variables for potential confounders",
+            "Cross-sectional data across multiple units",
+            "Control variables for potential confounders",
         ]
 
         # Sample size justification
         effect_size = 0.3  # Medium effect
         power = 0.8
         # Simplified power analysis: n = 2 * (z_alpha + z_beta)^2 / d^2
-        n_required = int(2 * ((1.96 + 0.84) ** 2) / (effect_size ** 2))
+        n_required = int(2 * ((1.96 + 0.84) ** 2) / (effect_size**2))
         sample_justification = f"For d={effect_size}, power={power}, alpha=0.05: n >= {n_required}"
 
         # Bias mitigations
@@ -622,7 +730,7 @@ class AutonomousResearchAgent:
             statistical_tests=tests,
             sample_size_justification=sample_justification,
             bias_mitigations=bias_mitigations,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
     async def _gather_external_data(
@@ -641,7 +749,9 @@ class AutonomousResearchAgent:
 
                 if query.success and query.actual_response:
                     total_bytes += len(json.dumps(query.actual_response))
-                    print(f"  ✓ {source_name}: {query.query_description[:40]}... ({query.latency_ms:.0f}ms)")
+                    print(
+                        f"  ✓ {source_name}: {query.query_description[:40]}... ({query.latency_ms:.0f}ms)"
+                    )
                 else:
                     print(f"  ✗ {source_name}: {query.query_description[:40]}... (failed)")
 
@@ -650,22 +760,25 @@ class AutonomousResearchAgent:
         # Store queries artifact
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "external_queries": [
-                    {
-                        "query_id": q.query_id,
-                        "hypothesis_id": q.hypothesis_id,
-                        "source_type": q.source_type.value,
-                        "query_description": q.query_description,
-                        "expected_schema": q.expected_schema,
-                        "response_hash": q.response_hash,
-                        "success": q.success,
-                        "latency_ms": q.latency_ms,
-                    }
-                    for q in self.queries
-                ],
-                "total_bytes": total_bytes,
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "external_queries": [
+                        {
+                            "query_id": q.query_id,
+                            "hypothesis_id": q.hypothesis_id,
+                            "source_type": q.source_type.value,
+                            "query_description": q.query_description,
+                            "expected_schema": q.expected_schema,
+                            "response_hash": q.response_hash,
+                            "success": q.success,
+                            "latency_ms": q.latency_ms,
+                        }
+                        for q in self.queries
+                    ],
+                    "total_bytes": total_bytes,
+                },
+                indent=2,
+            ).encode(),
             artifact_type="external_data_queries",
             created_by="autonomous_research_agent",
             run_id=run_id,
@@ -696,9 +809,11 @@ class AutonomousResearchAgent:
         # In production, this would be actual httpx calls
         try:
             response_data = self._simulate_external_response(source_name, source_config)
-            response_hash = hashlib.sha256(json.dumps(response_data, sort_keys=True).encode()).hexdigest()
+            response_hash = hashlib.sha256(
+                json.dumps(response_data, sort_keys=True).encode()
+            ).hexdigest()
             success = True
-        except Exception as e:
+        except Exception:
             response_data = None
             response_hash = None
             success = False
@@ -716,7 +831,7 @@ class AutonomousResearchAgent:
             response_hash=response_hash,
             success=success,
             latency_ms=round(latency, 1),
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
     def _simulate_external_response(self, source_name: str, source_config: dict) -> dict:
@@ -781,7 +896,7 @@ class AutonomousResearchAgent:
             # Find protocol for this hypothesis's question
             protocol = next(
                 (p for p in self.protocols.values() if p.question_id == hypothesis.question_id),
-                None
+                None,
             )
 
             if not protocol:
@@ -800,27 +915,36 @@ class AutonomousResearchAgent:
             # Update hypothesis based on result
             await self._update_hypothesis(hypothesis, result, max_revision_depth)
 
-            status_symbol = "✓" if hypothesis.status == HypothesisStatus.SUPPORTED else "✗" if hypothesis.status == HypothesisStatus.FALSIFIED else "→"
-            print(f"  {status_symbol} {hypothesis.hypothesis_id[:8]}: {hypothesis.status.value} (p={hypothesis.current_probability:.2f})")
+            status_symbol = (
+                "✓"
+                if hypothesis.status == HypothesisStatus.SUPPORTED
+                else "✗" if hypothesis.status == HypothesisStatus.FALSIFIED else "→"
+            )
+            print(
+                f"  {status_symbol} {hypothesis.hypothesis_id[:8]}: {hypothesis.status.value} (p={hypothesis.current_probability:.2f})"
+            )
 
         # Store results artifact
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "experiment_results": [
-                    {
-                        "result_id": r.result_id,
-                        "protocol_id": r.protocol_id,
-                        "hypothesis_id": r.hypothesis_id,
-                        "computed_metrics": r.computed_metrics,
-                        "statistical_tests_run": r.statistical_tests_run,
-                        "conclusion": r.conclusion,
-                        "confidence_level": r.confidence_level,
-                        "falsified": r.falsified,
-                    }
-                    for r in self.results
-                ]
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "experiment_results": [
+                        {
+                            "result_id": r.result_id,
+                            "protocol_id": r.protocol_id,
+                            "hypothesis_id": r.hypothesis_id,
+                            "computed_metrics": r.computed_metrics,
+                            "statistical_tests_run": r.statistical_tests_run,
+                            "conclusion": r.conclusion,
+                            "confidence_level": r.confidence_level,
+                            "falsified": r.falsified,
+                        }
+                        for r in self.results
+                    ]
+                },
+                indent=2,
+            ).encode(),
             artifact_type="experiment_results",
             created_by="autonomous_research_agent",
             run_id=run_id,
@@ -830,21 +954,24 @@ class AutonomousResearchAgent:
         # Store final hypothesis states
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "final_hypotheses": [
-                    {
-                        "hypothesis_id": h.hypothesis_id,
-                        "statement": h.statement,
-                        "status": h.status.value,
-                        "prior_probability": h.prior_probability,
-                        "posterior_probability": h.current_probability,
-                        "evidence_for": h.evidence_for,
-                        "evidence_against": h.evidence_against,
-                        "revision_history": h.revision_history,
-                    }
-                    for h in self.hypotheses.values()
-                ]
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "final_hypotheses": [
+                        {
+                            "hypothesis_id": h.hypothesis_id,
+                            "statement": h.statement,
+                            "status": h.status.value,
+                            "prior_probability": h.prior_probability,
+                            "posterior_probability": h.current_probability,
+                            "evidence_for": h.evidence_for,
+                            "evidence_against": h.evidence_against,
+                            "revision_history": h.revision_history,
+                        }
+                        for h in self.hypotheses.values()
+                    ]
+                },
+                indent=2,
+            ).encode(),
             artifact_type="hypothesis_outcomes",
             created_by="autonomous_research_agent",
             run_id=run_id,
@@ -877,13 +1004,15 @@ class AutonomousResearchAgent:
             p_value = self.rng.uniform(0, 0.15)  # Most tests have some signal
             effect_size = self.rng.uniform(0.1, 0.6)
 
-            tests_run.append({
-                "test": test,
-                "p_value": round(p_value, 4),
-                "effect_size": round(effect_size, 4),
-                "significant": p_value < 0.05,
-                "sample_size": len(all_data),
-            })
+            tests_run.append(
+                {
+                    "test": test,
+                    "p_value": round(p_value, 4),
+                    "effect_size": round(effect_size, 4),
+                    "significant": p_value < 0.05,
+                    "sample_size": len(all_data),
+                }
+            )
 
         # Determine if falsified
         n_significant = sum(1 for t in tests_run if t["significant"])
@@ -896,19 +1025,29 @@ class AutonomousResearchAgent:
         if falsified:
             conclusion = f"Hypothesis falsified: {len(tests_run) - n_significant}/{len(tests_run)} tests non-significant"
         else:
-            conclusion = f"Hypothesis supported: {n_significant}/{len(tests_run)} tests significant"
+            conclusion = (
+                f"Hypothesis supported: {n_significant}/{len(tests_run)} tests significant"
+            )
 
         return ExperimentResult(
             result_id=generate_id("result"),
             protocol_id=protocol.protocol_id,
             hypothesis_id=hypothesis.hypothesis_id,
-            observations=[{"source": q.query_id, "n_records": len(q.actual_response.get("records", [])) if q.actual_response else 0} for q in queries],
+            observations=[
+                {
+                    "source": q.query_id,
+                    "n_records": (
+                        len(q.actual_response.get("records", [])) if q.actual_response else 0
+                    ),
+                }
+                for q in queries
+            ],
             computed_metrics=computed_metrics,
             statistical_tests_run=tests_run,
             conclusion=conclusion,
             confidence_level=round(confidence, 3),
             falsified=falsified,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
     async def _update_hypothesis(
@@ -924,12 +1063,14 @@ class AutonomousResearchAgent:
             if revision_count < max_depth:
                 # Revise hypothesis
                 hypothesis.status = HypothesisStatus.REVISED
-                hypothesis.revision_history.append({
-                    "revision": revision_count + 1,
-                    "reason": result.conclusion,
-                    "prior_probability": hypothesis.current_probability,
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                })
+                hypothesis.revision_history.append(
+                    {
+                        "revision": revision_count + 1,
+                        "reason": result.conclusion,
+                        "prior_probability": hypothesis.current_probability,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                )
                 # Bayesian update (simplified)
                 hypothesis.current_probability *= 0.5
                 hypothesis.evidence_against.append(result.result_id)
@@ -953,19 +1094,33 @@ class AutonomousResearchAgent:
         started_at: str,
     ) -> ResearchCampaignReport:
         """Generate the final campaign report."""
-        completed_at = datetime.now(timezone.utc).isoformat()
+        completed_at = datetime.now(UTC).isoformat()
 
         # Compute statistics
         questions_by_domain = {}
         for q in self.questions.values():
             questions_by_domain[q.domain] = questions_by_domain.get(q.domain, 0) + 1
 
-        avg_testability = statistics.mean(q.testability_score for q in self.questions.values()) if self.questions else 0
-        avg_novelty = statistics.mean(q.novelty_score for q in self.questions.values()) if self.questions else 0
+        avg_testability = (
+            statistics.mean(q.testability_score for q in self.questions.values())
+            if self.questions
+            else 0
+        )
+        avg_novelty = (
+            statistics.mean(q.novelty_score for q in self.questions.values())
+            if self.questions
+            else 0
+        )
 
-        hypotheses_falsified = sum(1 for h in self.hypotheses.values() if h.status == HypothesisStatus.FALSIFIED)
-        hypotheses_supported = sum(1 for h in self.hypotheses.values() if h.status == HypothesisStatus.SUPPORTED)
-        hypotheses_revised = sum(1 for h in self.hypotheses.values() if h.status == HypothesisStatus.REVISED)
+        hypotheses_falsified = sum(
+            1 for h in self.hypotheses.values() if h.status == HypothesisStatus.FALSIFIED
+        )
+        hypotheses_supported = sum(
+            1 for h in self.hypotheses.values() if h.status == HypothesisStatus.SUPPORTED
+        )
+        hypotheses_revised = sum(
+            1 for h in self.hypotheses.values() if h.status == HypothesisStatus.REVISED
+        )
 
         max_revisions = max((len(h.revision_history) for h in self.hypotheses.values()), default=0)
 
@@ -973,8 +1128,7 @@ class AutonomousResearchAgent:
         query_success_rate = sum(1 for q in self.queries if q.success) / max(len(self.queries), 1)
 
         data_volume = sum(
-            len(json.dumps(q.actual_response)) if q.actual_response else 0
-            for q in self.queries
+            len(json.dumps(q.actual_response)) if q.actual_response else 0 for q in self.queries
         )
 
         total_tests = sum(len(r.statistical_tests_run) for r in self.results)
@@ -984,13 +1138,13 @@ class AutonomousResearchAgent:
 
         # Gate: passes if we demonstrated all capabilities
         gate_passed = (
-            len(self.questions) >= 3 and  # Generated questions
-            len(self.hypotheses) >= 3 and  # Formed hypotheses
-            len(self.protocols) >= 2 and  # Designed protocols
-            len(self.queries) >= 5 and  # Gathered data
-            query_success_rate >= 0.5 and  # Data retrieval worked
-            hypotheses_falsified + hypotheses_supported >= 2 and  # Actually tested
-            max_revisions >= 1  # Demonstrated revision
+            len(self.questions) >= 3  # Generated questions
+            and len(self.hypotheses) >= 3  # Formed hypotheses
+            and len(self.protocols) >= 2  # Designed protocols
+            and len(self.queries) >= 5  # Gathered data
+            and query_success_rate >= 0.5  # Data retrieval worked
+            and hypotheses_falsified + hypotheses_supported >= 2  # Actually tested
+            and max_revisions >= 1  # Demonstrated revision
         )
 
         report = ResearchCampaignReport(
@@ -1021,30 +1175,33 @@ class AutonomousResearchAgent:
         # Store final report
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "campaign_id": report.campaign_id,
-                "started_at": report.started_at,
-                "completed_at": report.completed_at,
-                "questions_generated": report.questions_generated,
-                "questions_by_domain": report.questions_by_domain,
-                "avg_testability": report.avg_testability,
-                "avg_novelty": report.avg_novelty,
-                "hypotheses_formed": report.hypotheses_formed,
-                "hypotheses_falsified": report.hypotheses_falsified,
-                "hypotheses_supported": report.hypotheses_supported,
-                "hypotheses_revised": report.hypotheses_revised,
-                "revision_depth": report.revision_depth,
-                "external_queries": report.external_queries,
-                "unique_sources": report.unique_sources,
-                "data_volume_bytes": report.data_volume_bytes,
-                "query_success_rate": report.query_success_rate,
-                "protocols_designed": report.protocols_designed,
-                "experiments_run": report.experiments_run,
-                "statistical_tests_applied": report.statistical_tests_applied,
-                "total_artifacts": report.total_artifacts,
-                "artifact_hashes": report.artifact_hashes,
-                "gate_passed": report.gate_passed,
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "campaign_id": report.campaign_id,
+                    "started_at": report.started_at,
+                    "completed_at": report.completed_at,
+                    "questions_generated": report.questions_generated,
+                    "questions_by_domain": report.questions_by_domain,
+                    "avg_testability": report.avg_testability,
+                    "avg_novelty": report.avg_novelty,
+                    "hypotheses_formed": report.hypotheses_formed,
+                    "hypotheses_falsified": report.hypotheses_falsified,
+                    "hypotheses_supported": report.hypotheses_supported,
+                    "hypotheses_revised": report.hypotheses_revised,
+                    "revision_depth": report.revision_depth,
+                    "external_queries": report.external_queries,
+                    "unique_sources": report.unique_sources,
+                    "data_volume_bytes": report.data_volume_bytes,
+                    "query_success_rate": report.query_success_rate,
+                    "protocols_designed": report.protocols_designed,
+                    "experiments_run": report.experiments_run,
+                    "statistical_tests_applied": report.statistical_tests_applied,
+                    "total_artifacts": report.total_artifacts,
+                    "artifact_hashes": report.artifact_hashes,
+                    "gate_passed": report.gate_passed,
+                },
+                indent=2,
+            ).encode(),
             artifact_type="autonomous_research_report",
             created_by="autonomous_research_agent",
             run_id=run_id,

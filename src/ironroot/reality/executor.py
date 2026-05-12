@@ -2,18 +2,19 @@
 """Reality falsification executor - runs prediction-locked tests against external reality."""
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ironroot.beliefs.belief_service import BeliefType, MetricClass, PredictionStatus, get_belief_service
-from ironroot.domain.ids import generate_id
+from ironroot.beliefs.belief_service import (
+    MetricClass,
+    get_belief_service,
+)
 from ironroot.orchestration.supervisor import RunPhase
 from ironroot.reality import (
-    ExternalObservation,
     HiddenParameterDataset,
     RealityInterfaceLayer,
     get_reality_interface,
@@ -124,20 +125,22 @@ class RealityFalsificationExecutor:
         # store predictions artifact (proof they were locked before observation)
         predictions_artifact = await self._artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "predictions": [
-                    {
-                        "id": b.id,
-                        "metric_name": b.content["metric_name"],
-                        "predicted_lower": b.content["predicted_lower"],
-                        "predicted_upper": b.content["predicted_upper"],
-                        "locked_at": b.content["locked_at"],
-                    }
-                    for b in prediction_beliefs
-                ],
-                "channel_locked": True,
-                "observations_acquired": False,
-            }).encode(),
+            data=json.dumps(
+                {
+                    "predictions": [
+                        {
+                            "id": b.id,
+                            "metric_name": b.content["metric_name"],
+                            "predicted_lower": b.content["predicted_lower"],
+                            "predicted_upper": b.content["predicted_upper"],
+                            "locked_at": b.content["locked_at"],
+                        }
+                        for b in prediction_beliefs
+                    ],
+                    "channel_locked": True,
+                    "observations_acquired": False,
+                }
+            ).encode(),
             artifact_type="prediction_lock_proof",
             created_by="reality_interface",
             run_id=run_id,
@@ -158,10 +161,12 @@ class RealityFalsificationExecutor:
         # store observations as artifact
         observations_artifact = await self._artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "observations": [o.to_dict() for o in observations],
-                "acquisition_timestamp": datetime.now(UTC).isoformat(),
-            }).encode(),
+            data=json.dumps(
+                {
+                    "observations": [o.to_dict() for o in observations],
+                    "acquisition_timestamp": datetime.now(UTC).isoformat(),
+                }
+            ).encode(),
             artifact_type="reality_observations",
             created_by="reality_interface",
             run_id=run_id,
@@ -210,15 +215,17 @@ class RealityFalsificationExecutor:
                     observation_id=matching_belief.id,
                 )
 
-                results.append(PredictionResult(
-                    prediction_id=pred_belief.id,
-                    metric_name=metric_name,
-                    predicted_lower=pred_belief.content["predicted_lower"],
-                    predicted_upper=pred_belief.content["predicted_upper"],
-                    observed_value=matching_obs.value,
-                    confirmed=confirmed,
-                    penalty=penalty,
-                ))
+                results.append(
+                    PredictionResult(
+                        prediction_id=pred_belief.id,
+                        metric_name=metric_name,
+                        predicted_lower=pred_belief.content["predicted_lower"],
+                        predicted_upper=pred_belief.content["predicted_upper"],
+                        observed_value=matching_obs.value,
+                        confirmed=confirmed,
+                        penalty=penalty,
+                    )
+                )
 
                 total_penalty += penalty
                 if not confirmed:
@@ -227,25 +234,27 @@ class RealityFalsificationExecutor:
         # Step 6: Generate contradiction report artifact
         contradiction_artifact = await self._artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "run_id": run_id,
-                "source_id": source.source_id,
-                "total_predictions": len(prediction_beliefs),
-                "contradictions": contradictions,
-                "total_penalty": total_penalty,
-                "results": [
-                    {
-                        "prediction_id": r.prediction_id,
-                        "metric_name": r.metric_name,
-                        "predicted_range": [r.predicted_lower, r.predicted_upper],
-                        "observed_value": r.observed_value,
-                        "confirmed": r.confirmed,
-                        "penalty": r.penalty,
-                    }
-                    for r in results
-                ],
-                "evaluated_at": datetime.now(UTC).isoformat(),
-            }).encode(),
+            data=json.dumps(
+                {
+                    "run_id": run_id,
+                    "source_id": source.source_id,
+                    "total_predictions": len(prediction_beliefs),
+                    "contradictions": contradictions,
+                    "total_penalty": total_penalty,
+                    "results": [
+                        {
+                            "prediction_id": r.prediction_id,
+                            "metric_name": r.metric_name,
+                            "predicted_range": [r.predicted_lower, r.predicted_upper],
+                            "observed_value": r.observed_value,
+                            "confirmed": r.confirmed,
+                            "penalty": r.penalty,
+                        }
+                        for r in results
+                    ],
+                    "evaluated_at": datetime.now(UTC).isoformat(),
+                }
+            ).encode(),
             artifact_type="contradiction_report",
             created_by="reality_interface",
             run_id=run_id,

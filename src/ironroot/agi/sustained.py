@@ -14,18 +14,13 @@ Gate passes if:
 - Self-healing recurrence decreases over time
 """
 
-import asyncio
 import hashlib
 import json
 import random
-import statistics
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from enum import Enum
-from typing import Any
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from scipy import stats as scipy_stats
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.domain.ids import generate_id
@@ -35,6 +30,7 @@ from ironroot.storage.artifact_service import get_artifact_service
 @dataclass
 class DailyTask:
     """A single daily evaluation task."""
+
     task_id: str
     day: int
     task_type: str
@@ -47,6 +43,7 @@ class DailyTask:
 @dataclass
 class DailyResult:
     """Result of daily evaluation."""
+
     day: int
     task_count: int
     composite_score: float
@@ -61,6 +58,7 @@ class DailyResult:
 @dataclass
 class TrendAnalysis:
     """Statistical trend analysis."""
+
     metric_name: str
     values: list[float]
     slope: float
@@ -74,6 +72,7 @@ class TrendAnalysis:
 @dataclass
 class LongitudinalReport:
     """Complete 30-day longitudinal report."""
+
     report_id: str
     days_run: int
     daily_results: list[DailyResult]
@@ -87,6 +86,7 @@ class LongitudinalReport:
 @dataclass
 class PromotionRecord:
     """Record of strategy promotion during sustained run."""
+
     day: int
     candidate: str
     baseline: str
@@ -98,6 +98,7 @@ class PromotionRecord:
 @dataclass
 class RegressionIncident:
     """Record of a regression incident."""
+
     incident_id: str
     day: int
     metric: str
@@ -131,9 +132,12 @@ class SustainedImprovementRunner:
         """Generate held-out tasks for a day."""
         tasks = []
         domains = [
-            "tabular_classification", "tabular_regression",
-            "text_retrieval", "time_series",
-            "control", "planning",
+            "tabular_classification",
+            "tabular_regression",
+            "text_retrieval",
+            "time_series",
+            "control",
+            "planning",
         ]
 
         for i in range(self.TASKS_PER_DAY):
@@ -263,7 +267,7 @@ class SustainedImprovementRunner:
             values=values,
             slope=round(float(slope), 6),
             intercept=round(float(intercept), 4),
-            r_squared=round(float(r_value ** 2), 4),
+            r_squared=round(float(r_value**2), 4),
             p_value=round(float(p_value), 4),
             trend_direction=direction,
             significant=p_value < 0.05,
@@ -315,11 +319,11 @@ class SustainedImprovementRunner:
         recurrence_trend = trend_analyses[2]
 
         gate_passed = (
-            composite_trend.trend_direction == "improving" and
-            composite_trend.significant and
-            catastrophic == 0 and
-            (transfer_trend.slope >= 0 or not transfer_trend.significant) and
-            (recurrence_trend.slope <= 0 or not recurrence_trend.significant)
+            composite_trend.trend_direction == "improving"
+            and composite_trend.significant
+            and catastrophic == 0
+            and (transfer_trend.slope >= 0 or not transfer_trend.significant)
+            and (recurrence_trend.slope <= 0 or not recurrence_trend.significant)
         )
 
         report = LongitudinalReport(
@@ -330,7 +334,7 @@ class SustainedImprovementRunner:
             overall_improvement=round(overall_improvement, 4),
             catastrophic_regressions=catastrophic,
             gate_passed=gate_passed,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
         # Store artifacts
@@ -348,22 +352,25 @@ class SustainedImprovementRunner:
         # Main report
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "report_id": report.report_id,
-                "days_run": report.days_run,
-                "overall_improvement": float(report.overall_improvement),
-                "catastrophic_regressions": report.catastrophic_regressions,
-                "gate_passed": bool(report.gate_passed),
-                "trend_summary": {
-                    t.metric_name: {
-                        "slope": float(t.slope),
-                        "direction": t.trend_direction,
-                        "significant": bool(t.significant),
-                        "p_value": float(t.p_value),
-                    }
-                    for t in report.trend_analyses
+            data=json.dumps(
+                {
+                    "report_id": report.report_id,
+                    "days_run": report.days_run,
+                    "overall_improvement": float(report.overall_improvement),
+                    "catastrophic_regressions": report.catastrophic_regressions,
+                    "gate_passed": bool(report.gate_passed),
+                    "trend_summary": {
+                        t.metric_name: {
+                            "slope": float(t.slope),
+                            "direction": t.trend_direction,
+                            "significant": bool(t.significant),
+                            "p_value": float(t.p_value),
+                        }
+                        for t in report.trend_analyses
+                    },
                 },
-            }, indent=2).encode(),
+                indent=2,
+            ).encode(),
             artifact_type="longitudinal_score_report",
             created_by="sustained_runner",
             run_id=run_id,
@@ -373,13 +380,16 @@ class SustainedImprovementRunner:
         # Daily scores (time series)
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "days": [r.day for r in self.daily_results],
-                "composite_scores": [r.composite_score for r in self.daily_results],
-                "transfer_scores": [r.transfer_score for r in self.daily_results],
-                "baseline_scores": [r.baseline_suite_score for r in self.daily_results],
-                "recurrence_rates": self.recurrence_history,
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "days": [r.day for r in self.daily_results],
+                    "composite_scores": [r.composite_score for r in self.daily_results],
+                    "transfer_scores": [r.transfer_score for r in self.daily_results],
+                    "baseline_scores": [r.baseline_suite_score for r in self.daily_results],
+                    "recurrence_rates": self.recurrence_history,
+                },
+                indent=2,
+            ).encode(),
             artifact_type="daily_score_series",
             created_by="sustained_runner",
             run_id=run_id,
@@ -389,21 +399,24 @@ class SustainedImprovementRunner:
         # Promotion ledger
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "promotions": [
-                    {
-                        "day": p.day,
-                        "candidate": p.candidate,
-                        "baseline": p.baseline,
-                        "promoted": p.promoted,
-                        "effect_size": p.effect_size,
-                        "reason": p.reason,
-                    }
-                    for p in self.promotions
-                ],
-                "total_attempted": len(self.promotions),
-                "total_promoted": sum(1 for p in self.promotions if p.promoted),
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "promotions": [
+                        {
+                            "day": p.day,
+                            "candidate": p.candidate,
+                            "baseline": p.baseline,
+                            "promoted": p.promoted,
+                            "effect_size": p.effect_size,
+                            "reason": p.reason,
+                        }
+                        for p in self.promotions
+                    ],
+                    "total_attempted": len(self.promotions),
+                    "total_promoted": sum(1 for p in self.promotions if p.promoted),
+                },
+                indent=2,
+            ).encode(),
             artifact_type="promotion_ledger",
             created_by="sustained_runner",
             run_id=run_id,
@@ -413,18 +426,21 @@ class SustainedImprovementRunner:
         # Regression log
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "incidents": [
-                    {
-                        "incident_id": r.incident_id,
-                        "day": r.day,
-                        "metric": r.metric,
-                        "magnitude": r.regression_magnitude,
-                        "is_catastrophic": r.is_catastrophic,
-                    }
-                    for r in self.regressions
-                ],
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "incidents": [
+                        {
+                            "incident_id": r.incident_id,
+                            "day": r.day,
+                            "metric": r.metric,
+                            "magnitude": r.regression_magnitude,
+                            "is_catastrophic": r.is_catastrophic,
+                        }
+                        for r in self.regressions
+                    ],
+                },
+                indent=2,
+            ).encode(),
             artifact_type="regression_incident_log",
             created_by="sustained_runner",
             run_id=run_id,
@@ -433,8 +449,7 @@ class SustainedImprovementRunner:
 
         # Recurrence trend
         recurrence_trend = next(
-            (t for t in report.trend_analyses if t.metric_name == "healing_recurrence"),
-            None
+            (t for t in report.trend_analyses if t.metric_name == "healing_recurrence"), None
         )
         trend_data = {}
         if recurrence_trend:
@@ -450,10 +465,13 @@ class SustainedImprovementRunner:
 
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "recurrence_rates": [float(r) for r in self.recurrence_history],
-                "trend": trend_data,
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "recurrence_rates": [float(r) for r in self.recurrence_history],
+                    "trend": trend_data,
+                },
+                indent=2,
+            ).encode(),
             artifact_type="recurrence_trend_report",
             created_by="sustained_runner",
             run_id=run_id,

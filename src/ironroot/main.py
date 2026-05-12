@@ -5,15 +5,18 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-# Load .env before anything else (for LLM config vars)
+# Load .env BEFORE importing settings or any module that reads env vars.
+# `pydantic-settings` also reads `.env` but pre-loading here keeps LLM
+# adapters and other env-driven dependencies seeing the same values.
 load_dotenv()
 
-from ironroot.api.router import api_router
-from ironroot.logging.configure import get_logger
-from ironroot.settings import get_settings
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+
+from ironroot.api.router import api_router  # noqa: E402
+from ironroot.logging.configure import get_logger  # noqa: E402
+from ironroot.settings import get_settings  # noqa: E402
 
 settings = get_settings()
 logger = get_logger(__name__)

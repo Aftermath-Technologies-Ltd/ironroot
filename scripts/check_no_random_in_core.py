@@ -46,7 +46,8 @@ _LINE_COMMENT = re.compile(r"#.*?$", re.MULTILINE)
 
 def is_experimental(module: str) -> bool:
     return any(
-        module == prefix or module.startswith(prefix + ".") for prefix in EXPERIMENTAL_MODULE_PREFIXES
+        module == prefix or module.startswith(prefix + ".")
+        for prefix in EXPERIMENTAL_MODULE_PREFIXES
     )
 
 
@@ -106,7 +107,9 @@ def main() -> int:
         )
         return 1
 
-    print(f"OK: no forbidden random.* references in {len(EXPERIMENTAL_MODULE_PREFIXES)} non-experimental modules.")
+    print(
+        f"OK: no forbidden random.* references in {len(EXPERIMENTAL_MODULE_PREFIXES)} non-experimental modules."
+    )
     return 0
 
 

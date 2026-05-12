@@ -14,14 +14,12 @@ Gate passes if:
 - Can explain failures as limitations without inventing facts
 """
 
-import asyncio
-import hashlib
 import json
 import random
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +29,7 @@ from ironroot.storage.artifact_service import get_artifact_service
 
 class ToolCategory(str, Enum):
     """Tool categories."""
+
     DATA_PROCESSING = "data_processing"
     API_INTERACTION = "api_interaction"
     FILE_MANIPULATION = "file_manipulation"
@@ -41,6 +40,7 @@ class ToolCategory(str, Enum):
 @dataclass
 class ToolParameter:
     """A single tool parameter."""
+
     name: str
     type: str
     required: bool
@@ -52,6 +52,7 @@ class ToolParameter:
 @dataclass
 class ToolSpec:
     """Complete tool API specification."""
+
     tool_id: str
     name: str
     category: ToolCategory
@@ -67,6 +68,7 @@ class ToolSpec:
 @dataclass
 class ToolTrialResult:
     """Result of a single tool trial."""
+
     trial_id: str
     tool_id: str
     inputs: dict
@@ -80,6 +82,7 @@ class ToolTrialResult:
 @dataclass
 class ToolTest:
     """A test case for tool usage."""
+
     test_id: str
     tool_id: str
     test_name: str
@@ -92,6 +95,7 @@ class ToolTest:
 @dataclass
 class ToolWorkflow:
     """A minimal correct workflow using the tool."""
+
     workflow_id: str
     tool_id: str
     steps: list[dict]
@@ -103,6 +107,7 @@ class ToolWorkflow:
 @dataclass
 class ToolCompetenceReport:
     """Report on tool learning competence."""
+
     report_id: str
     tool_id: str
     tool_name: str
@@ -253,7 +258,11 @@ class ToolOnboardingTask:
         if successful:
             best_trial = successful[-1]  # Most recent success
             steps = [
-                {"step": 1, "action": "validate_inputs", "description": "Check required parameters"},
+                {
+                    "step": 1,
+                    "action": "validate_inputs",
+                    "description": "Check required parameters",
+                },
                 {"step": 2, "action": "call_tool", "inputs": best_trial.inputs},
                 {"step": 3, "action": "verify_output", "description": "Check return value"},
             ]
@@ -328,7 +337,7 @@ class ToolOnboardingTask:
             failure_explanations=failure_explanations,
             competence_score=round(competence, 4),
             gate_passed=competence >= 0.6,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
 
@@ -378,7 +387,9 @@ class ToolLearningSuite:
                     ToolParameter("method", "string", True, "HTTP method: GET, POST, PUT, DELETE"),
                     ToolParameter("headers", "dict", False, "Request headers"),
                     ToolParameter("body", "dict", False, "Request body for POST/PUT"),
-                    ToolParameter("timeout", "number", False, "Request timeout in seconds", default=30),
+                    ToolParameter(
+                        "timeout", "number", False, "Request timeout in seconds", default=30
+                    ),
                 ],
                 return_type="dict",
                 return_description="Response with status, headers, and body",
@@ -386,7 +397,12 @@ class ToolLearningSuite:
                     {"url": "https://api.example.com/data", "method": "GET"},
                 ],
                 constraints=["URL must be valid HTTP/HTTPS", "timeout must be 1-300"],
-                error_conditions=["Connection timeout", "Invalid URL", "Rate limited", "Auth failed"],
+                error_conditions=[
+                    "Connection timeout",
+                    "Invalid URL",
+                    "Rate limited",
+                    "Auth failed",
+                ],
             ),
             ToolSpec(
                 tool_id="tool_file_manager",
@@ -394,10 +410,14 @@ class ToolLearningSuite:
                 category=ToolCategory.FILE_MANIPULATION,
                 description="Manages files and directories",
                 parameters=[
-                    ToolParameter("operation", "string", True, "Operation: read, write, delete, list"),
+                    ToolParameter(
+                        "operation", "string", True, "Operation: read, write, delete, list"
+                    ),
                     ToolParameter("path", "string", True, "File or directory path"),
                     ToolParameter("content", "string", False, "Content for write operation"),
-                    ToolParameter("recursive", "bool", False, "Recursive for list/delete", default=False),
+                    ToolParameter(
+                        "recursive", "bool", False, "Recursive for list/delete", default=False
+                    ),
                 ],
                 return_type="dict",
                 return_description="Operation result with status and data",
@@ -506,17 +526,20 @@ class ToolLearningSuite:
         # Spec ingestion
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "tool_id": task.spec.tool_id,
-                "spec": {
-                    "name": task.spec.name,
-                    "category": task.spec.category.value,
-                    "parameters": [
-                        {"name": p.name, "type": p.type, "required": p.required}
-                        for p in task.spec.parameters
-                    ],
+            data=json.dumps(
+                {
+                    "tool_id": task.spec.tool_id,
+                    "spec": {
+                        "name": task.spec.name,
+                        "category": task.spec.category.value,
+                        "parameters": [
+                            {"name": p.name, "type": p.type, "required": p.required}
+                            for p in task.spec.parameters
+                        ],
+                    },
                 },
-            }, indent=2).encode(),
+                indent=2,
+            ).encode(),
             artifact_type="tool_spec_ingestion",
             created_by="tool_learning_suite",
             run_id=run_id,
@@ -526,18 +549,21 @@ class ToolLearningSuite:
         # Test suite
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "tool_id": task.spec.tool_id,
-                "tests": [
-                    {
-                        "test_id": t.test_id,
-                        "name": t.test_name,
-                        "catches_misuse": t.catches_misuse,
-                        "misuse_type": t.misuse_type,
-                    }
-                    for t in task.tests
-                ],
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "tool_id": task.spec.tool_id,
+                    "tests": [
+                        {
+                            "test_id": t.test_id,
+                            "name": t.test_name,
+                            "catches_misuse": t.catches_misuse,
+                            "misuse_type": t.misuse_type,
+                        }
+                        for t in task.tests
+                    ],
+                },
+                indent=2,
+            ).encode(),
             artifact_type="tool_usage_test_suite",
             created_by="tool_learning_suite",
             run_id=run_id,
@@ -547,17 +573,20 @@ class ToolLearningSuite:
         # Competence report
         await self.artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "report_id": report.report_id,
-                "tool_id": report.tool_id,
-                "competence_score": report.competence_score,
-                "gate_passed": report.gate_passed,
-                "trials": report.trials_attempted,
-                "successful": report.trials_successful,
-                "tests": report.tests_generated,
-                "workflow_verified": report.workflow_verified,
-                "failure_explanations": report.failure_explanations,
-            }, indent=2).encode(),
+            data=json.dumps(
+                {
+                    "report_id": report.report_id,
+                    "tool_id": report.tool_id,
+                    "competence_score": report.competence_score,
+                    "gate_passed": report.gate_passed,
+                    "trials": report.trials_attempted,
+                    "successful": report.trials_successful,
+                    "tests": report.tests_generated,
+                    "workflow_verified": report.workflow_verified,
+                    "failure_explanations": report.failure_explanations,
+                },
+                indent=2,
+            ).encode(),
             artifact_type="tool_competence_report",
             created_by="tool_learning_suite",
             run_id=run_id,

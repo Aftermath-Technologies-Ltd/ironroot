@@ -2,11 +2,11 @@
 """policy definitions for agents and strategies."""
 
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Literal
 
 
-class ToolPermission(str, Enum):
+class ToolPermission(StrEnum):
     """tools an agent may or may not use."""
 
     RETRIEVER = "retriever"

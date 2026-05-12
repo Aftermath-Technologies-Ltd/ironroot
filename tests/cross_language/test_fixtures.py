@@ -39,8 +39,7 @@ def test_canonical_vectors() -> None:
     for v in vectors:
         actual = canonical_json(v["input"])
         assert actual == v["canonical"], (
-            f"canonical mismatch for {v['name']}: "
-            f"expected {v['canonical']!r}, got {actual!r}"
+            f"canonical mismatch for {v['name']}: " f"expected {v['canonical']!r}, got {actual!r}"
         )
 
 

@@ -12,25 +12,19 @@ Categories:
 At least 6 must be external datasets or externally committed episodes.
 """
 
-import asyncio
 import hashlib
 import json
 import random
-import statistics
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
-
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from ironroot.domain.ids import generate_id
-from ironroot.storage.artifact_service import get_artifact_service
 
 
 class SourceCategory(str, Enum):
     """Reality source categories."""
+
     TABULAR_CLASSIFICATION = "tabular_classification"
     TABULAR_REGRESSION = "tabular_regression"
     TEXT_RETRIEVAL = "text_retrieval"
@@ -42,6 +36,7 @@ class SourceCategory(str, Enum):
 @dataclass
 class Provenance:
     """Data provenance proof."""
+
     source_type: str
     acquisition_method: str
     data_hash: str
@@ -53,6 +48,7 @@ class Provenance:
 @dataclass
 class Observation:
     """A single observation from a reality source."""
+
     metric_name: str
     value: Any
     provenance: Provenance
@@ -62,6 +58,7 @@ class Observation:
 @dataclass
 class Prediction:
     """A locked prediction before observation."""
+
     prediction_id: str
     metric_name: str
     lower_bound: float | None
@@ -75,6 +72,7 @@ class Prediction:
 @dataclass
 class PredictionOutcome:
     """Result of comparing prediction to observation."""
+
     prediction_id: str
     prediction: Prediction
     observation: Observation
@@ -86,6 +84,7 @@ class PredictionOutcome:
 @dataclass
 class PenaltyUpdate:
     """Record of how penalty changed behavior."""
+
     source_id: str
     penalty_applied: float
     behavior_before: dict
@@ -132,10 +131,7 @@ class RealitySource(ABC):
         """Evaluate locked predictions against observations."""
         outcomes = []
         for pred in self._locked_predictions:
-            obs = next(
-                (o for o in self._observations if o.metric_name == pred.metric_name),
-                None
-            )
+            obs = next((o for o in self._observations if o.metric_name == pred.metric_name), None)
             if obs is None:
                 continue
 
@@ -172,20 +168,24 @@ class RealitySource(ABC):
 
     def get_provenance_hash(self) -> str:
         """Get hash of all provenance records."""
-        data = json.dumps([
-            {
-                "metric": o.metric_name,
-                "value": str(o.value),
-                "hash": o.provenance.data_hash,
-            }
-            for o in self._observations
-        ], sort_keys=True)
+        data = json.dumps(
+            [
+                {
+                    "metric": o.metric_name,
+                    "value": str(o.value),
+                    "hash": o.provenance.data_hash,
+                }
+                for o in self._observations
+            ],
+            sort_keys=True,
+        )
         return hashlib.sha256(data.encode()).hexdigest()
 
 
 # =============================================================================
 # CATEGORY 1: TABULAR CLASSIFICATION (2 sources)
 # =============================================================================
+
 
 class WineQualityClassification(RealitySource):
     """UCI Wine Quality - External dataset."""
@@ -202,7 +202,7 @@ class WineQualityClassification(RealitySource):
     async def acquire_observations(self) -> list[Observation]:
         """Acquire wine quality observations."""
         # Simulating UCI Wine Quality dataset holdout
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="uci_dataset",
             acquisition_method="HTTP GET UCI ML Repository + holdout split",
@@ -212,10 +212,21 @@ class WineQualityClassification(RealitySource):
         )
 
         observations = [
-            Observation("quality_class", self.rng.choice(["low", "medium", "high"]), provenance, timestamp),
-            Observation("accuracy", round(0.75 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp),
-            Observation("f1_score", round(0.72 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp),
-            Observation("class_distribution", round(0.33 + self.rng.uniform(-0.05, 0.05), 4), provenance, timestamp),
+            Observation(
+                "quality_class", self.rng.choice(["low", "medium", "high"]), provenance, timestamp
+            ),
+            Observation(
+                "accuracy", round(0.75 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp
+            ),
+            Observation(
+                "f1_score", round(0.72 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp
+            ),
+            Observation(
+                "class_distribution",
+                round(0.33 + self.rng.uniform(-0.05, 0.05), 4),
+                provenance,
+                timestamp,
+            ),
         ]
         self._observations = observations
         return observations
@@ -237,7 +248,7 @@ class IrisClassification(RealitySource):
         )
 
     async def acquire_observations(self) -> list[Observation]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="sklearn_dataset",
             acquisition_method="sklearn.datasets.load_iris + holdout",
@@ -247,10 +258,21 @@ class IrisClassification(RealitySource):
         )
 
         observations = [
-            Observation("species", self.rng.choice(["setosa", "versicolor", "virginica"]), provenance, timestamp),
-            Observation("accuracy", round(0.92 + self.rng.uniform(-0.05, 0.05), 4), provenance, timestamp),
-            Observation("precision", round(0.91 + self.rng.uniform(-0.05, 0.05), 4), provenance, timestamp),
-            Observation("recall", round(0.90 + self.rng.uniform(-0.05, 0.05), 4), provenance, timestamp),
+            Observation(
+                "species",
+                self.rng.choice(["setosa", "versicolor", "virginica"]),
+                provenance,
+                timestamp,
+            ),
+            Observation(
+                "accuracy", round(0.92 + self.rng.uniform(-0.05, 0.05), 4), provenance, timestamp
+            ),
+            Observation(
+                "precision", round(0.91 + self.rng.uniform(-0.05, 0.05), 4), provenance, timestamp
+            ),
+            Observation(
+                "recall", round(0.90 + self.rng.uniform(-0.05, 0.05), 4), provenance, timestamp
+            ),
         ]
         self._observations = observations
         return observations
@@ -262,6 +284,7 @@ class IrisClassification(RealitySource):
 # =============================================================================
 # CATEGORY 2: TABULAR REGRESSION (2 sources)
 # =============================================================================
+
 
 class BostonHousingRegression(RealitySource):
     """Boston Housing Prices - External dataset."""
@@ -276,7 +299,7 @@ class BostonHousingRegression(RealitySource):
         )
 
     async def acquire_observations(self) -> list[Observation]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="kaggle_dataset",
             acquisition_method="Kaggle Boston Housing + holdout",
@@ -286,10 +309,14 @@ class BostonHousingRegression(RealitySource):
         )
 
         observations = [
-            Observation("mean_price", round(22.5 + self.rng.uniform(-5, 5), 4), provenance, timestamp),
+            Observation(
+                "mean_price", round(22.5 + self.rng.uniform(-5, 5), 4), provenance, timestamp
+            ),
             Observation("rmse", round(4.5 + self.rng.uniform(-1, 1), 4), provenance, timestamp),
             Observation("mae", round(3.2 + self.rng.uniform(-0.5, 0.5), 4), provenance, timestamp),
-            Observation("r2_score", round(0.72 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp),
+            Observation(
+                "r2_score", round(0.72 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp
+            ),
         ]
         self._observations = observations
         return observations
@@ -311,7 +338,7 @@ class CaliforniaHousingRegression(RealitySource):
         )
 
     async def acquire_observations(self) -> list[Observation]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="sklearn_dataset",
             acquisition_method="sklearn.datasets.fetch_california_housing + holdout",
@@ -321,10 +348,18 @@ class CaliforniaHousingRegression(RealitySource):
         )
 
         observations = [
-            Observation("median_value", round(2.1 + self.rng.uniform(-0.5, 0.5), 4), provenance, timestamp),
-            Observation("rmse", round(0.65 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp),
-            Observation("mae", round(0.45 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp),
-            Observation("r2_score", round(0.65 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp),
+            Observation(
+                "median_value", round(2.1 + self.rng.uniform(-0.5, 0.5), 4), provenance, timestamp
+            ),
+            Observation(
+                "rmse", round(0.65 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp
+            ),
+            Observation(
+                "mae", round(0.45 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp
+            ),
+            Observation(
+                "r2_score", round(0.65 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp
+            ),
         ]
         self._observations = observations
         return observations
@@ -336,6 +371,7 @@ class CaliforniaHousingRegression(RealitySource):
 # =============================================================================
 # CATEGORY 3: TEXT RETRIEVAL/EXTRACTION (2 sources)
 # =============================================================================
+
 
 class DocumentRetrievalSource(RealitySource):
     """Document retrieval from external corpus - Committed seed."""
@@ -353,7 +389,7 @@ class DocumentRetrievalSource(RealitySource):
         ).hexdigest()
 
     async def acquire_observations(self) -> list[Observation]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="committed_synthetic",
             acquisition_method="Seed-committed document generation",
@@ -364,10 +400,24 @@ class DocumentRetrievalSource(RealitySource):
         )
 
         observations = [
-            Observation("precision_at_10", round(0.65 + self.rng.uniform(-0.15, 0.15), 4), provenance, timestamp),
-            Observation("recall_at_10", round(0.55 + self.rng.uniform(-0.15, 0.15), 4), provenance, timestamp),
-            Observation("ndcg", round(0.60 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp),
-            Observation("mrr", round(0.70 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp),
+            Observation(
+                "precision_at_10",
+                round(0.65 + self.rng.uniform(-0.15, 0.15), 4),
+                provenance,
+                timestamp,
+            ),
+            Observation(
+                "recall_at_10",
+                round(0.55 + self.rng.uniform(-0.15, 0.15), 4),
+                provenance,
+                timestamp,
+            ),
+            Observation(
+                "ndcg", round(0.60 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp
+            ),
+            Observation(
+                "mrr", round(0.70 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp
+            ),
         ]
         self._observations = observations
         return observations
@@ -389,7 +439,7 @@ class EntityExtractionSource(RealitySource):
         )
 
     async def acquire_observations(self) -> list[Observation]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="conll_dataset",
             acquisition_method="CoNLL-2003 NER holdout",
@@ -399,9 +449,21 @@ class EntityExtractionSource(RealitySource):
         )
 
         observations = [
-            Observation("entity_f1", round(0.85 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp),
-            Observation("entity_precision", round(0.87 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp),
-            Observation("entity_recall", round(0.83 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp),
+            Observation(
+                "entity_f1", round(0.85 + self.rng.uniform(-0.1, 0.1), 4), provenance, timestamp
+            ),
+            Observation(
+                "entity_precision",
+                round(0.87 + self.rng.uniform(-0.1, 0.1), 4),
+                provenance,
+                timestamp,
+            ),
+            Observation(
+                "entity_recall",
+                round(0.83 + self.rng.uniform(-0.1, 0.1), 4),
+                provenance,
+                timestamp,
+            ),
             Observation("entities_found", self.rng.randint(50, 150), provenance, timestamp),
         ]
         self._observations = observations
@@ -414,6 +476,7 @@ class EntityExtractionSource(RealitySource):
 # =============================================================================
 # CATEGORY 4: TIME SERIES FORECASTING (2 sources)
 # =============================================================================
+
 
 class StockPriceForecast(RealitySource):
     """Stock price time series - External data."""
@@ -428,7 +491,7 @@ class StockPriceForecast(RealitySource):
         )
 
     async def acquire_observations(self) -> list[Observation]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="financial_api",
             acquisition_method="Yahoo Finance API delayed data",
@@ -440,9 +503,18 @@ class StockPriceForecast(RealitySource):
         base_price = 150 + self.rng.uniform(-20, 20)
         observations = [
             Observation("next_day_price", round(base_price, 2), provenance, timestamp),
-            Observation("direction", self.rng.choice(["up", "down", "flat"]), provenance, timestamp),
-            Observation("volatility", round(0.02 + self.rng.uniform(-0.01, 0.01), 4), provenance, timestamp),
-            Observation("prediction_mape", round(0.03 + self.rng.uniform(-0.01, 0.02), 4), provenance, timestamp),
+            Observation(
+                "direction", self.rng.choice(["up", "down", "flat"]), provenance, timestamp
+            ),
+            Observation(
+                "volatility", round(0.02 + self.rng.uniform(-0.01, 0.01), 4), provenance, timestamp
+            ),
+            Observation(
+                "prediction_mape",
+                round(0.03 + self.rng.uniform(-0.01, 0.02), 4),
+                provenance,
+                timestamp,
+            ),
         ]
         self._observations = observations
         return observations
@@ -467,7 +539,7 @@ class EnergyDemandForecast(RealitySource):
         ).hexdigest()
 
     async def acquire_observations(self) -> list[Observation]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="committed_synthetic",
             acquisition_method="Seed-committed energy demand simulation",
@@ -481,8 +553,12 @@ class EnergyDemandForecast(RealitySource):
         observations = [
             Observation("next_hour_demand", round(base_demand, 2), provenance, timestamp),
             Observation("peak_hour", self.rng.randint(14, 20), provenance, timestamp),
-            Observation("forecast_mae", round(50 + self.rng.uniform(-20, 20), 2), provenance, timestamp),
-            Observation("forecast_rmse", round(75 + self.rng.uniform(-25, 25), 2), provenance, timestamp),
+            Observation(
+                "forecast_mae", round(50 + self.rng.uniform(-20, 20), 2), provenance, timestamp
+            ),
+            Observation(
+                "forecast_rmse", round(75 + self.rng.uniform(-25, 25), 2), provenance, timestamp
+            ),
         ]
         self._observations = observations
         return observations
@@ -494,6 +570,7 @@ class EnergyDemandForecast(RealitySource):
 # =============================================================================
 # CATEGORY 5: INTERACTIVE CONTROL (2 sources)
 # =============================================================================
+
 
 class PendulumControlSource(RealitySource):
     """Pendulum control simulator - Committed seed."""
@@ -511,7 +588,7 @@ class PendulumControlSource(RealitySource):
         ).hexdigest()
 
     async def acquire_observations(self) -> list[Observation]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="physics_simulator",
             acquisition_method="OpenAI Gym Pendulum-v1 with committed seed",
@@ -522,10 +599,20 @@ class PendulumControlSource(RealitySource):
         )
 
         observations = [
-            Observation("episode_reward", round(-200 + self.rng.uniform(-100, 200), 2), provenance, timestamp),
+            Observation(
+                "episode_reward",
+                round(-200 + self.rng.uniform(-100, 200), 2),
+                provenance,
+                timestamp,
+            ),
             Observation("steps_to_upright", self.rng.randint(20, 100), provenance, timestamp),
             Observation("stability_duration", self.rng.randint(50, 200), provenance, timestamp),
-            Observation("control_smoothness", round(0.7 + self.rng.uniform(-0.2, 0.2), 4), provenance, timestamp),
+            Observation(
+                "control_smoothness",
+                round(0.7 + self.rng.uniform(-0.2, 0.2), 4),
+                provenance,
+                timestamp,
+            ),
         ]
         self._observations = observations
         return observations
@@ -550,7 +637,7 @@ class CartPoleControlSource(RealitySource):
         ).hexdigest()
 
     async def acquire_observations(self) -> list[Observation]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="physics_simulator",
             acquisition_method="OpenAI Gym CartPole-v1 with committed seed",
@@ -562,9 +649,21 @@ class CartPoleControlSource(RealitySource):
 
         observations = [
             Observation("episode_length", self.rng.randint(100, 500), provenance, timestamp),
-            Observation("balance_score", round(0.8 + self.rng.uniform(-0.3, 0.2), 4), provenance, timestamp),
-            Observation("max_angle_deviation", round(0.1 + self.rng.uniform(-0.05, 0.1), 4), provenance, timestamp),
-            Observation("success_rate", round(0.85 + self.rng.uniform(-0.15, 0.15), 4), provenance, timestamp),
+            Observation(
+                "balance_score", round(0.8 + self.rng.uniform(-0.3, 0.2), 4), provenance, timestamp
+            ),
+            Observation(
+                "max_angle_deviation",
+                round(0.1 + self.rng.uniform(-0.05, 0.1), 4),
+                provenance,
+                timestamp,
+            ),
+            Observation(
+                "success_rate",
+                round(0.85 + self.rng.uniform(-0.15, 0.15), 4),
+                provenance,
+                timestamp,
+            ),
         ]
         self._observations = observations
         return observations
@@ -576,6 +675,7 @@ class CartPoleControlSource(RealitySource):
 # =============================================================================
 # CATEGORY 6: PLANNING/DISCRETE ENVIRONMENT (2 sources)
 # =============================================================================
+
 
 class GridWorldPlanningSource(RealitySource):
     """Gridworld navigation planning - Committed seed."""
@@ -593,7 +693,7 @@ class GridWorldPlanningSource(RealitySource):
         ).hexdigest()
 
     async def acquire_observations(self) -> list[Observation]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="discrete_environment",
             acquisition_method="Procedural gridworld with committed seed",
@@ -605,9 +705,16 @@ class GridWorldPlanningSource(RealitySource):
 
         observations = [
             Observation("path_length", self.rng.randint(15, 50), provenance, timestamp),
-            Observation("optimal_ratio", round(0.85 + self.rng.uniform(-0.2, 0.1), 4), provenance, timestamp),
+            Observation(
+                "optimal_ratio",
+                round(0.85 + self.rng.uniform(-0.2, 0.1), 4),
+                provenance,
+                timestamp,
+            ),
             Observation("goals_reached", self.rng.randint(8, 10), provenance, timestamp),
-            Observation("planning_time_ms", round(50 + self.rng.uniform(-20, 50), 2), provenance, timestamp),
+            Observation(
+                "planning_time_ms", round(50 + self.rng.uniform(-20, 50), 2), provenance, timestamp
+            ),
         ]
         self._observations = observations
         return observations
@@ -629,7 +736,7 @@ class LogisticsPlanningSource(RealitySource):
         )
 
     async def acquire_observations(self) -> list[Observation]:
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(UTC).isoformat()
         provenance = Provenance(
             source_type="operations_research",
             acquisition_method="CVRP benchmark instances",
@@ -639,10 +746,22 @@ class LogisticsPlanningSource(RealitySource):
         )
 
         observations = [
-            Observation("total_cost", round(1500 + self.rng.uniform(-300, 300), 2), provenance, timestamp),
+            Observation(
+                "total_cost", round(1500 + self.rng.uniform(-300, 300), 2), provenance, timestamp
+            ),
             Observation("vehicles_used", self.rng.randint(3, 8), provenance, timestamp),
-            Observation("optimality_gap", round(0.05 + self.rng.uniform(-0.02, 0.05), 4), provenance, timestamp),
-            Observation("constraints_satisfied", round(0.95 + self.rng.uniform(-0.1, 0.05), 4), provenance, timestamp),
+            Observation(
+                "optimality_gap",
+                round(0.05 + self.rng.uniform(-0.02, 0.05), 4),
+                provenance,
+                timestamp,
+            ),
+            Observation(
+                "constraints_satisfied",
+                round(0.95 + self.rng.uniform(-0.1, 0.05), 4),
+                provenance,
+                timestamp,
+            ),
         ]
         self._observations = observations
         return observations
@@ -654,6 +773,7 @@ class LogisticsPlanningSource(RealitySource):
 # =============================================================================
 # REGISTRY
 # =============================================================================
+
 
 @dataclass
 class RealitySourceRegistry:

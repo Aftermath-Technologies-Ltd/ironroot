@@ -20,9 +20,9 @@ from pathlib import Path
 # deployments are expected to set a real password and IRONROOT_DEBUG=false.
 os.environ.setdefault("IRONROOT_DEBUG", "true")
 
-import pytest  # noqa: E402
+import pytest
 
-from ironroot.storage.artifacts import ArtifactStore  # noqa: E402
+from ironroot.storage.artifacts import ArtifactStore
 
 
 @pytest.fixture

@@ -12,12 +12,12 @@ End state must have:
 import json
 import statistics
 import time
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
-from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.domain.ids import generate_id
@@ -154,7 +154,7 @@ class SelfHealingRestorer:
         # Try restoration strategies
         strategies = self._get_restoration_strategies(violation.invariant_type)
 
-        for strategy_name in strategies[:self.MAX_RESTORATION_ATTEMPTS]:
+        for strategy_name in strategies[: self.MAX_RESTORATION_ATTEMPTS]:
             start_time = time.time()
             attempt = RestorationAttempt(
                 attempt_id=generate_id("rst"),
@@ -165,9 +165,7 @@ class SelfHealingRestorer:
 
             try:
                 # Apply restoration strategy
-                success = await self._apply_strategy(
-                    session, violation, strategy_name
-                )
+                success = await self._apply_strategy(session, violation, strategy_name)
 
                 elapsed_ms = (time.time() - start_time) * 1000
                 attempt.time_to_restore_ms = elapsed_ms
@@ -198,7 +196,7 @@ class SelfHealingRestorer:
                 if attempt.success:
                     break
 
-            except Exception as e:
+            except Exception:
                 attempt.completed_at = datetime.now(UTC).isoformat()
                 attempts.append(attempt)
                 continue
@@ -233,17 +231,19 @@ class SelfHealingRestorer:
         # Store report artifact
         await self._artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "violation_id": violation.violation_id,
-                "invariant_type": violation.invariant_type.value,
-                "description": violation.description,
-                "final_status": final_status.value,
-                "attempts": len(attempts),
-                "time_to_invariant_restoration_ms": time_to_invariant_ms,
-                "repair_success_rate_over_trials": success_rate,
-                "recurrence_rate_over_10_runs": recurrence_rate,
-                "new_regression_tests": new_tests,
-            }).encode(),
+            data=json.dumps(
+                {
+                    "violation_id": violation.violation_id,
+                    "invariant_type": violation.invariant_type.value,
+                    "description": violation.description,
+                    "final_status": final_status.value,
+                    "attempts": len(attempts),
+                    "time_to_invariant_restoration_ms": time_to_invariant_ms,
+                    "repair_success_rate_over_trials": success_rate,
+                    "recurrence_rate_over_10_runs": recurrence_rate,
+                    "new_regression_tests": new_tests,
+                }
+            ).encode(),
             artifact_type="restoration_report",
             created_by="self_healing_restorer",
             run_id=run_id,
@@ -343,6 +343,7 @@ class SelfHealingRestorer:
 
     def _add_regression_test(self, violation: InvariantViolation) -> bool:
         """adds a regression test for this violation type."""
+
         def regression_test():
             # Would check that this specific violation doesn't recur
             return True
@@ -355,6 +356,7 @@ class SelfHealingRestorer:
         # Would inject the same conditions and check if violation happens
         # For now, simulate low recurrence
         import random
+
         return random.random() < 0.05  # 5% recurrence rate
 
     def get_restoration_stats(self) -> dict[str, Any]:
@@ -366,9 +368,15 @@ class SelfHealingRestorer:
 
         verified = sum(1 for r in reports if r.final_status == RestorationStatus.VERIFIED)
 
-        avg_time = statistics.mean(
-            r.time_to_invariant_restoration_ms for r in reports if r.time_to_invariant_restoration_ms > 0
-        ) if any(r.time_to_invariant_restoration_ms > 0 for r in reports) else 0.0
+        avg_time = (
+            statistics.mean(
+                r.time_to_invariant_restoration_ms
+                for r in reports
+                if r.time_to_invariant_restoration_ms > 0
+            )
+            if any(r.time_to_invariant_restoration_ms > 0 for r in reports)
+            else 0.0
+        )
 
         avg_success_rate = statistics.mean(r.repair_success_rate_over_trials for r in reports)
         avg_recurrence = statistics.mean(r.recurrence_rate for r in reports)

@@ -6,10 +6,8 @@ Uses real financial/weather data where future values are genuinely unknown at pr
 
 import random
 import statistics
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
-
-import httpx
 
 from ironroot.domain.ids import generate_id
 from ironroot.reality.sources.base import (
@@ -108,10 +106,16 @@ class TimeSeriesSource(RealitySource):
             "future_std": round(statistics.stdev(future) if len(future) > 1 else 0.0, 4),
             "future_min": round(min(future), 4),
             "future_max": round(max(future), 4),
-            "trend_direction": 1.0 if future[-1] > future[0] else -1.0 if future[-1] < future[0] else 0.0,
+            "trend_direction": (
+                1.0 if future[-1] > future[0] else -1.0 if future[-1] < future[0] else 0.0
+            ),
             "volatility_ratio": round(
-                (statistics.stdev(future) / statistics.stdev(past)) if statistics.stdev(past) > 0 else 1.0,
-                4
+                (
+                    (statistics.stdev(future) / statistics.stdev(past))
+                    if statistics.stdev(past) > 0
+                    else 1.0
+                ),
+                4,
             ),
         }
 
@@ -154,5 +158,5 @@ class TimeSeriesSource(RealitySource):
             change = rng.gauss(0.001, 0.02)  # small positive drift, moderate volatility
             values.append(values[-1] * (1 + change))
 
-        self._past_data = values[:self._window_size]
-        self._future_data = values[self._window_size:]
+        self._past_data = values[: self._window_size]
+        self._future_data = values[self._window_size :]

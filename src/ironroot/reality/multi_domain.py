@@ -7,19 +7,16 @@ Computes cross-domain survival rates and distribution shift metrics.
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.beliefs.belief_service import MetricClass, get_belief_service
-from ironroot.domain.ids import generate_id
+from ironroot.reality.sources.adversarial import AdversarialSource
 from ironroot.reality.sources.base import RealitySource
+from ironroot.reality.sources.delayed import DelayedOutcomeSource
+from ironroot.reality.sources.simulator import HiddenParamSimulator
 from ironroot.reality.sources.tabular import TabularDatasetSource
 from ironroot.reality.sources.time_series import TimeSeriesSource
-from ironroot.reality.sources.simulator import HiddenParamSimulator
-from ironroot.reality.sources.delayed import DelayedOutcomeSource
-from ironroot.reality.sources.adversarial import AdversarialSource
 from ironroot.storage.artifact_service import get_artifact_service
 
 
@@ -122,14 +119,22 @@ class MultiDomainExecutor:
 
         # compute aggregate metrics
         domains_survived = sum(1 for r in domain_results if r.survived)
-        cross_domain_survival_rate = domains_survived / len(domain_results) if domain_results else 0.0
+        cross_domain_survival_rate = (
+            domains_survived / len(domain_results) if domain_results else 0.0
+        )
 
         # distribution shift failure: how many domains with shift attacks failed
-        shift_domains = [r for r in domain_results if "shift" in r.domain or "adversarial" in r.domain]
+        shift_domains = [
+            r for r in domain_results if "shift" in r.domain or "adversarial" in r.domain
+        ]
         shift_failures = sum(1 for r in shift_domains if not r.survived)
-        distribution_shift_failure_rate = shift_failures / len(shift_domains) if shift_domains else 0.0
+        distribution_shift_failure_rate = (
+            shift_failures / len(shift_domains) if shift_domains else 0.0
+        )
 
-        calibration_error = sum(calibration_errors) / len(calibration_errors) if calibration_errors else 0.0
+        calibration_error = (
+            sum(calibration_errors) / len(calibration_errors) if calibration_errors else 0.0
+        )
 
         # store cross-domain observations
         await self._belief_service.create_observation_belief(
@@ -174,26 +179,28 @@ class MultiDomainExecutor:
         # store artifact
         artifact = await self._artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "run_id": run_id,
-                "domains_tested": len(domain_results),
-                "domains_survived": domains_survived,
-                "cross_domain_survival_rate": cross_domain_survival_rate,
-                "distribution_shift_failure_rate": distribution_shift_failure_rate,
-                "calibration_error": calibration_error,
-                "domain_results": [
-                    {
-                        "domain": r.domain,
-                        "source_type": r.source_type,
-                        "survived": r.survived,
-                        "predictions_made": r.predictions_made,
-                        "predictions_confirmed": r.predictions_confirmed,
-                        "total_penalty": r.total_penalty,
-                    }
-                    for r in domain_results
-                ],
-                "provenance_hashes": provenance_hashes,
-            }).encode(),
+            data=json.dumps(
+                {
+                    "run_id": run_id,
+                    "domains_tested": len(domain_results),
+                    "domains_survived": domains_survived,
+                    "cross_domain_survival_rate": cross_domain_survival_rate,
+                    "distribution_shift_failure_rate": distribution_shift_failure_rate,
+                    "calibration_error": calibration_error,
+                    "domain_results": [
+                        {
+                            "domain": r.domain,
+                            "source_type": r.source_type,
+                            "survived": r.survived,
+                            "predictions_made": r.predictions_made,
+                            "predictions_confirmed": r.predictions_confirmed,
+                            "total_penalty": r.total_penalty,
+                        }
+                        for r in domain_results
+                    ],
+                    "provenance_hashes": provenance_hashes,
+                }
+            ).encode(),
             artifact_type="cross_domain_report",
             created_by="multi_domain_executor",
             run_id=run_id,

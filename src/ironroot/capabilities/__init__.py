@@ -10,10 +10,11 @@ Each capability has:
 """
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -128,8 +129,12 @@ INITIAL_CAPABILITIES = [
         success_threshold=0.7,  # 70% of predictions must be correct
         evidence_artifacts=["prediction_lock_proof", "contradiction_report"],
         failure_modes=[
-            FailureMode("fm_001", "Post-hoc prediction modification", "hash chain verification", "critical"),
-            FailureMode("fm_002", "Overly wide prediction intervals", "interval width check", "major"),
+            FailureMode(
+                "fm_001", "Post-hoc prediction modification", "hash chain verification", "critical"
+            ),
+            FailureMode(
+                "fm_002", "Overly wide prediction intervals", "interval width check", "major"
+            ),
         ],
         sample_efficiency_target=100,
         transfer_domains=["tabular", "time_series"],
@@ -160,8 +165,15 @@ INITIAL_CAPABILITIES = [
         success_threshold=0.6,
         evidence_artifacts=["world_model_spec", "world_model_evaluation"],
         failure_modes=[
-            FailureMode("fm_005", "Confounding variable ignored", "back-door criterion check", "major"),
-            FailureMode("fm_006", "Intervention vs observation confusion", "do-calculus validation", "critical"),
+            FailureMode(
+                "fm_005", "Confounding variable ignored", "back-door criterion check", "major"
+            ),
+            FailureMode(
+                "fm_006",
+                "Intervention vs observation confusion",
+                "do-calculus validation",
+                "critical",
+            ),
         ],
         sample_efficiency_target=150,
         transfer_domains=["causal_graphs", "simulators"],
@@ -176,7 +188,9 @@ INITIAL_CAPABILITIES = [
         success_threshold=0.7,
         evidence_artifacts=["shift_detection_report"],
         failure_modes=[
-            FailureMode("fm_007", "False positive on in-distribution", "calibration check", "major"),
+            FailureMode(
+                "fm_007", "False positive on in-distribution", "calibration check", "major"
+            ),
             FailureMode("fm_008", "Missed covariate shift", "shift injection test", "critical"),
         ],
         sample_efficiency_target=100,
@@ -208,7 +222,9 @@ INITIAL_CAPABILITIES = [
         success_threshold=0.5,
         evidence_artifacts=["planning_trace", "goal_achievement_report"],
         failure_modes=[
-            FailureMode("fm_011", "Model exploitation (adversarial actions)", "robustness test", "critical"),
+            FailureMode(
+                "fm_011", "Model exploitation (adversarial actions)", "robustness test", "critical"
+            ),
             FailureMode("fm_012", "Myopic planning", "horizon analysis", "major"),
         ],
         sample_efficiency_target=300,
@@ -240,7 +256,9 @@ INITIAL_CAPABILITIES = [
         success_threshold=0.3,  # max 30% degradation
         evidence_artifacts=["adversarial_evaluation", "robustness_report"],
         failure_modes=[
-            FailureMode("fm_015", "Gradient-based attack vulnerability", "PGD attack test", "critical"),
+            FailureMode(
+                "fm_015", "Gradient-based attack vulnerability", "PGD attack test", "critical"
+            ),
             FailureMode("fm_016", "Distribution shift attack", "poisoning test", "critical"),
         ],
         sample_efficiency_target=500,
@@ -316,7 +334,10 @@ class CapabilityRegistry:
 
             # check prerequisites
             prereqs_met = all(
-                self._records.get(prereq, CapabilityRecord(prereq, CapabilityStatus.NOT_ATTEMPTED, [])).status == CapabilityStatus.PASSED
+                self._records.get(
+                    prereq, CapabilityRecord(prereq, CapabilityStatus.NOT_ATTEMPTED, [])
+                ).status
+                == CapabilityStatus.PASSED
                 for prereq in cap.prerequisites
             )
 
@@ -374,28 +395,29 @@ class CapabilityRegistry:
                     first_attempt_samples = record.attempts[0].samples_used
                     latest_samples = samples_used
                     record.transfer_gain = 1.0 - (latest_samples / first_attempt_samples)
-        else:
-            if record.status == CapabilityStatus.PASSED:
-                record.status = CapabilityStatus.REGRESSED
-            elif record.status == CapabilityStatus.NOT_ATTEMPTED:
-                record.status = CapabilityStatus.FAILED
+        elif record.status == CapabilityStatus.PASSED:
+            record.status = CapabilityStatus.REGRESSED
+        elif record.status == CapabilityStatus.NOT_ATTEMPTED:
+            record.status = CapabilityStatus.FAILED
 
         # store attempt artifact
         await self._artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "attempt_id": attempt.attempt_id,
-                "capability_id": capability_id,
-                "capability_name": cap.name,
-                "run_id": run_id,
-                "domain": domain,
-                "samples_used": samples_used,
-                "metric_value": metric_value,
-                "threshold": cap.success_threshold,
-                "passed": passed,
-                "failure_modes_triggered": failure_modes_triggered,
-                "artifacts_produced": artifacts_produced,
-            }).encode(),
+            data=json.dumps(
+                {
+                    "attempt_id": attempt.attempt_id,
+                    "capability_id": capability_id,
+                    "capability_name": cap.name,
+                    "run_id": run_id,
+                    "domain": domain,
+                    "samples_used": samples_used,
+                    "metric_value": metric_value,
+                    "threshold": cap.success_threshold,
+                    "passed": passed,
+                    "failure_modes_triggered": failure_modes_triggered,
+                    "artifacts_produced": artifacts_produced,
+                }
+            ).encode(),
             artifact_type="capability_attempt",
             created_by="capability_registry",
             run_id=run_id,

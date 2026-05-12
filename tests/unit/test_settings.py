@@ -35,7 +35,9 @@ class TestCorsAllowedOrigins:
     def test_debug_returns_explicit_localhost_set(self) -> None:
         s = Settings(debug=True, db_password="changeme", _env_file=None)  # type: ignore[call-arg]
         origins = s.cors_allowed_origins
-        assert all(o.startswith("http://localhost") or o.startswith("http://127.0.0.1") for o in origins)
+        assert all(
+            o.startswith("http://localhost") or o.startswith("http://127.0.0.1") for o in origins
+        )
         assert "*" not in origins
         assert len(origins) > 0
 

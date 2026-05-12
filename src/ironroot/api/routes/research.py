@@ -1,7 +1,6 @@
 # Author: Bradley R. Kinnard
 """Research API endpoints for researcher-facing interface."""
 
-from dataclasses import asdict
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -20,12 +19,14 @@ router = APIRouter()
 
 class SubmitResearchRequest(BaseModel):
     """Request to submit new research."""
+
     criteria: str
     seed: int | None = None
 
 
 class SubmitResearchResponse(BaseModel):
     """Response from submitting research."""
+
     research_id: str
     status: str
     message: str
@@ -34,6 +35,7 @@ class SubmitResearchResponse(BaseModel):
 
 class ProgressResponse(BaseModel):
     """Current progress of research."""
+
     status: str
     percent: int
     phase_description: str
@@ -45,6 +47,7 @@ class ProgressResponse(BaseModel):
 
 class FindingResponse(BaseModel):
     """A research finding."""
+
     finding_type: str
     summary: str
     metric_name: str | None
@@ -54,6 +57,7 @@ class FindingResponse(BaseModel):
 
 class EvidenceResponse(BaseModel):
     """An evidence artifact."""
+
     artifact_id: str
     artifact_type: str
     content_hash: str
@@ -64,6 +68,7 @@ class EvidenceResponse(BaseModel):
 
 class ResultsResponse(BaseModel):
     """Complete research results."""
+
     research_id: str
     original_criteria: str
     summary: str
@@ -91,8 +96,7 @@ async def submit_research_endpoint(request: SubmitResearchRequest) -> SubmitRese
     """
     if not request.criteria or len(request.criteria.strip()) < 10:
         raise HTTPException(
-            status_code=400,
-            detail="Research criteria must be at least 10 characters"
+            status_code=400, detail="Research criteria must be at least 10 characters"
         )
 
     async with get_session() as session:
@@ -116,10 +120,7 @@ async def get_status_endpoint(research_id: str) -> ProgressResponse:
     progress = await get_research_status(research_id)
 
     if not progress:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Research job {research_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Research job {research_id} not found")
 
     return ProgressResponse(
         status=progress.status.value,
@@ -142,18 +143,11 @@ async def get_results_endpoint(research_id: str) -> ResultsResponse:
         progress = await get_research_status(research_id)
         if progress:
             if progress.status == ResearchStatus.FAILED:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Research job failed"
-                )
+                raise HTTPException(status_code=500, detail="Research job failed")
             raise HTTPException(
-                status_code=202,
-                detail=f"Research still in progress: {progress.percent}% complete"
+                status_code=202, detail=f"Research still in progress: {progress.percent}% complete"
             )
-        raise HTTPException(
-            status_code=404,
-            detail=f"Research job {research_id} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Research job {research_id} not found")
 
     return ResultsResponse(
         research_id=results.research_id,

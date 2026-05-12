@@ -274,19 +274,21 @@ class StrategyEvolutionGate:
         """stores promotion result as artifact."""
         await self._artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "strategy_id": result.candidate.strategy_id,
-                "from_version": result.candidate.from_version,
-                "to_version": result.candidate.to_version,
-                "decision": result.decision.value,
-                "effect_size": result.effect_size,
-                "statistical_significance": result.statistical_significance,
-                "regression_rate_on_baseline": result.regression_rate_on_baseline,
-                "reasoning": result.reasoning,
-                "decided_at": result.decided_at,
-                "gates_passed": result.candidate.gates_passed,
-                "gates_failed": result.candidate.gates_failed,
-            }).encode(),
+            data=json.dumps(
+                {
+                    "strategy_id": result.candidate.strategy_id,
+                    "from_version": result.candidate.from_version,
+                    "to_version": result.candidate.to_version,
+                    "decision": result.decision.value,
+                    "effect_size": result.effect_size,
+                    "statistical_significance": result.statistical_significance,
+                    "regression_rate_on_baseline": result.regression_rate_on_baseline,
+                    "reasoning": result.reasoning,
+                    "decided_at": result.decided_at,
+                    "gates_passed": result.candidate.gates_passed,
+                    "gates_failed": result.candidate.gates_failed,
+                }
+            ).encode(),
             artifact_type="promotion_decision",
             created_by="strategy_evolution_gate",
             run_id=run_id,
@@ -298,13 +300,37 @@ class StrategyEvolutionGate:
         if not self._promotion_history:
             return {"total_evaluations": 0}
 
-        promoted = sum(1 for r in self._promotion_history if r.decision == PromotionDecision.PROMOTED)
-        rejected_gates = sum(1 for r in self._promotion_history if r.decision == PromotionDecision.REJECTED_GATES)
-        rejected_threshold = sum(1 for r in self._promotion_history if r.decision == PromotionDecision.REJECTED_THRESHOLD)
-        rejected_regression = sum(1 for r in self._promotion_history if r.decision == PromotionDecision.REJECTED_REGRESSION)
-        rejected_adversarial = sum(1 for r in self._promotion_history if r.decision == PromotionDecision.REJECTED_ADVERSARIAL)
+        promoted = sum(
+            1 for r in self._promotion_history if r.decision == PromotionDecision.PROMOTED
+        )
+        rejected_gates = sum(
+            1 for r in self._promotion_history if r.decision == PromotionDecision.REJECTED_GATES
+        )
+        rejected_threshold = sum(
+            1
+            for r in self._promotion_history
+            if r.decision == PromotionDecision.REJECTED_THRESHOLD
+        )
+        rejected_regression = sum(
+            1
+            for r in self._promotion_history
+            if r.decision == PromotionDecision.REJECTED_REGRESSION
+        )
+        rejected_adversarial = sum(
+            1
+            for r in self._promotion_history
+            if r.decision == PromotionDecision.REJECTED_ADVERSARIAL
+        )
 
-        avg_effect_size = statistics.mean(r.effect_size for r in self._promotion_history if r.decision == PromotionDecision.PROMOTED) if promoted else 0.0
+        avg_effect_size = (
+            statistics.mean(
+                r.effect_size
+                for r in self._promotion_history
+                if r.decision == PromotionDecision.PROMOTED
+            )
+            if promoted
+            else 0.0
+        )
 
         return {
             "total_evaluations": len(self._promotion_history),

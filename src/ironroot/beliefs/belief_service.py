@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import func, select
@@ -17,7 +17,7 @@ from ironroot.orchestration.supervisor import RunPhase
 from ironroot.storage.models import ArtifactRecord, BeliefRecord, RunRecord
 
 
-class BeliefType(str, Enum):
+class BeliefType(StrEnum):
     """explicit belief categories."""
 
     LIFECYCLE = "lifecycle"  # run_start, run_end, phase transitions - NOT research
@@ -26,14 +26,14 @@ class BeliefType(str, Enum):
     PREDICTION = "prediction"  # locked claims about future reality, penalties apply
 
 
-class MetricClass(str, Enum):
+class MetricClass(StrEnum):
     """observation metric classification."""
 
     PRIMARY = "primary"  # directly measures the capability under test
     SECONDARY = "secondary"  # operational/bookkeeping metrics
 
 
-class PredictionStatus(str, Enum):
+class PredictionStatus(StrEnum):
     """prediction belief status."""
 
     PENDING = "pending"  # awaiting reality observation
@@ -124,7 +124,6 @@ PRIMARY_METRIC_NAMES = {
     "hidden_wind_speed",
     "hidden_initial_velocity",
     # delayed outcome metrics
-    "effect_size",
     "p_value",
     "confidence_interval_width",
     "responder_rate",
@@ -225,7 +224,8 @@ class BeliefService:
         if current_phase not in OBSERVATION_ALLOWED_PHASES:
             raise InvariantViolation(
                 "observation_phase",
-                f"observation beliefs only allowed after test/verify, current phase: {current_phase.value}",
+                "observation beliefs only allowed after test/verify, "
+                f"current phase: {current_phase.value}",
             )
 
         # rule 2: must include artifact references
@@ -236,20 +236,19 @@ class BeliefService:
             )
 
         # rule 3: primary metrics must use recognized names
-        if metric_class == MetricClass.PRIMARY:
-            if metric_name not in PRIMARY_METRIC_NAMES:
-                raise InvariantViolation(
-                    "observation_primary_metric",
-                    f"primary metric '{metric_name}' not recognized. "
-                    f"Valid names: {sorted(PRIMARY_METRIC_NAMES)[:5]}...",
-                )
+        if metric_class == MetricClass.PRIMARY and metric_name not in PRIMARY_METRIC_NAMES:
+            raise InvariantViolation(
+                "observation_primary_metric",
+                f"primary metric '{metric_name}' not recognized. "
+                f"Valid names: {sorted(PRIMARY_METRIC_NAMES)[:5]}...",
+            )
 
         # rule 4: no interpretation language in method description
         for pattern in INTERPRETATION_PATTERNS:
             if re.search(pattern, method, re.IGNORECASE):
                 raise InvariantViolation(
                     "observation_interpretation",
-                    f"method description must not contain interpretation language",
+                    "method description must not contain interpretation language",
                 )
 
         # build structured content
@@ -345,7 +344,8 @@ class BeliefService:
                 if not reason:
                     raise InvariantViolation(
                         "hypothesis_failed_check",
-                        f"failed check '{check_name}' must have an explanation of why it doesn't invalidate the claim",
+                        f"failed check '{check_name}' must have an explanation of why "
+                        "it doesn't invalidate the claim",
                     )
                 # verify the explanation is in limitations
                 if not any(check_name in lim for lim in limitations):
@@ -488,18 +488,16 @@ class BeliefService:
         if confirmed:
             penalty = 0.0
         else:
-            if observed_value < lower:
-                distance = lower - observed_value
-            else:
-                distance = observed_value - upper
+            distance = lower - observed_value if observed_value < lower else observed_value - upper
             # normalize by range width
             range_width = upper - lower if upper > lower else 1.0
             penalty = min(1.0, distance / range_width)
 
         # update prediction (immutable content is replaced)
+        status = PredictionStatus.CONFIRMED if confirmed else PredictionStatus.CONTRADICTED
         new_content = {
             **prediction.content,
-            "status": PredictionStatus.CONFIRMED.value if confirmed else PredictionStatus.CONTRADICTED.value,
+            "status": status.value,
             "observed_value": observed_value,
             "observation_id": observation_id,
             "penalty_applied": penalty,
@@ -529,8 +527,7 @@ class BeliefService:
     ) -> dict[str, Any]:
         """returns cross-run survival statistics for predictions on a source."""
         result = await session.execute(
-            select(BeliefRecord)
-            .where(BeliefRecord.belief_type == BeliefType.PREDICTION.value)
+            select(BeliefRecord).where(BeliefRecord.belief_type == BeliefType.PREDICTION.value)
         )
         all_predictions = list(result.scalars().all())
 
@@ -543,7 +540,7 @@ class BeliefService:
             metric = p.content.get("metric_name", "unknown")
             by_metric.setdefault(metric, []).append(p)
 
-        stats = {
+        stats: dict[str, Any] = {
             "source_id": source_id,
             "total_predictions": len(predictions),
             "metrics": {},
@@ -592,9 +589,7 @@ class BeliefService:
             .where(BeliefRecord.belief_type == BeliefType.OBSERVATION.value)
         )
         observations = list(obs_result.scalars().all())
-        primary_count = sum(
-            1 for o in observations if o.content.get("metric_class") == "primary"
-        )
+        primary_count = sum(1 for o in observations if o.content.get("metric_class") == "primary")
         secondary_count = len(observations) - primary_count
 
         # count predictions
@@ -605,7 +600,9 @@ class BeliefService:
         )
         predictions = list(pred_result.scalars().all())
         pred_confirmed = sum(1 for p in predictions if p.content.get("status") == "confirmed")
-        pred_contradicted = sum(1 for p in predictions if p.content.get("status") == "contradicted")
+        pred_contradicted = sum(
+            1 for p in predictions if p.content.get("status") == "contradicted"
+        )
         pred_pending = sum(1 for p in predictions if p.content.get("status") == "pending")
 
         return {
@@ -660,7 +657,9 @@ class BeliefService:
         result = await session.execute(select(RunRecord).where(RunRecord.id == run_id))
         return result.scalar_one_or_none()
 
-    async def _get_artifact(self, session: AsyncSession, artifact_id: str) -> ArtifactRecord | None:
+    async def _get_artifact(
+        self, session: AsyncSession, artifact_id: str
+    ) -> ArtifactRecord | None:
         result = await session.execute(
             select(ArtifactRecord).where(ArtifactRecord.id == artifact_id)
         )
@@ -685,9 +684,7 @@ class BeliefService:
             select(BeliefRecord).where(BeliefRecord.id.in_(observation_ids))
         )
         observations = list(result.scalars().all())
-        return sum(
-            1 for o in observations if o.content.get("metric_class") == "primary"
-        )
+        return sum(1 for o in observations if o.content.get("metric_class") == "primary")
 
 
 # singleton

@@ -15,10 +15,11 @@ import json
 import random
 import statistics
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Callable
+from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -207,7 +208,7 @@ class ReasoningTask(BatteryTask):
         else:
             # multi-step
             values = rng.sample(range(1, 50), 4)
-            premises = [f"A = {values[0]}", f"B = A + {values[1]}", f"C = B * 2"]
+            premises = [f"A = {values[0]}", f"B = A + {values[1]}", "C = B * 2"]
             question = "What is C?"
             answer = (values[0] + values[1]) * 2
 
@@ -406,15 +407,19 @@ class GeneralIntelligenceBattery:
 
             try:
                 prediction = predictor(instance)
-            except Exception as e:
+            except Exception:
                 prediction = None
 
             latency_ms = (time.time() - start_time) * 1000
 
             # find matching task for scoring
             task = next(
-                (t for t in self._tasks if t.domain == instance.domain and t.difficulty == instance.difficulty),
-                self._tasks[0]
+                (
+                    t
+                    for t in self._tasks
+                    if t.domain == instance.domain and t.difficulty == instance.difficulty
+                ),
+                self._tasks[0],
             )
 
             if prediction is not None:
@@ -422,14 +427,16 @@ class GeneralIntelligenceBattery:
             else:
                 score, correct = 0.0, False
 
-            results.append(TaskResult(
-                task_id=instance.task_id,
-                prediction=prediction,
-                score=score,
-                correct=correct,
-                latency_ms=latency_ms,
-                evaluated_at=datetime.now(UTC).isoformat(),
-            ))
+            results.append(
+                TaskResult(
+                    task_id=instance.task_id,
+                    prediction=prediction,
+                    score=score,
+                    correct=correct,
+                    latency_ms=latency_ms,
+                    evaluated_at=datetime.now(UTC).isoformat(),
+                )
+            )
 
         # compute aggregate metrics
         tasks_correct = sum(1 for r in results if r.correct)
@@ -475,19 +482,21 @@ class GeneralIntelligenceBattery:
         # store battery result artifact
         await self._artifact_service.store_artifact(
             session=session,
-            data=json.dumps({
-                "battery_id": battery_id,
-                "run_id": run_id,
-                "strategy_id": strategy_id,
-                "tasks_run": len(results),
-                "tasks_correct": tasks_correct,
-                "overall_score": overall_score,
-                "score_by_domain": score_by_domain,
-                "score_by_difficulty": score_by_difficulty,
-                "calibration_error": calibration_error,
-                "input_hashes": battery_result.input_hashes,
-                "ground_truth_hashes": battery_result.ground_truth_hashes,
-            }).encode(),
+            data=json.dumps(
+                {
+                    "battery_id": battery_id,
+                    "run_id": run_id,
+                    "strategy_id": strategy_id,
+                    "tasks_run": len(results),
+                    "tasks_correct": tasks_correct,
+                    "overall_score": overall_score,
+                    "score_by_domain": score_by_domain,
+                    "score_by_difficulty": score_by_difficulty,
+                    "calibration_error": calibration_error,
+                    "input_hashes": battery_result.input_hashes,
+                    "ground_truth_hashes": battery_result.ground_truth_hashes,
+                }
+            ).encode(),
             artifact_type="gi_battery_result",
             created_by="general_intelligence_battery",
             run_id=run_id,

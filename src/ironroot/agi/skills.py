@@ -10,11 +10,10 @@ Skills are learned modules with:
 Skills become reusable across domains.
 """
 
-import hashlib
 import json
 import random
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -26,6 +25,7 @@ from ironroot.storage.artifact_service import get_artifact_service
 
 class SkillType(str, Enum):
     """Types of skills."""
+
     PREDICTION = "prediction"
     CLASSIFICATION = "classification"
     PLANNING = "planning"
@@ -37,6 +37,7 @@ class SkillType(str, Enum):
 @dataclass
 class SkillTest:
     """A test for a skill."""
+
     test_id: str
     name: str
     inputs: dict
@@ -48,6 +49,7 @@ class SkillTest:
 @dataclass
 class TransferMetadata:
     """Metadata about skill transferability."""
+
     source_domains: list[str]
     target_domains_tested: list[str]
     transfer_success_rate: float
@@ -58,6 +60,7 @@ class TransferMetadata:
 @dataclass
 class Skill:
     """A reusable skill with preconditions and effects."""
+
     skill_id: str
     name: str
     skill_type: SkillType
@@ -75,6 +78,7 @@ class Skill:
 @dataclass
 class SkillApplication:
     """Record of applying a skill to a task."""
+
     application_id: str
     skill_id: str
     target_domain: str
@@ -152,7 +156,9 @@ class SkillLibrary:
             success_prob += min(0.2, adaptation_budget * 0.5)
 
         success = self.rng.random() < success_prob
-        performance = success_prob * (0.9 + self.rng.uniform(0, 0.2)) if success else success_prob * 0.5
+        performance = (
+            success_prob * (0.9 + self.rng.uniform(0, 0.2)) if success else success_prob * 0.5
+        )
 
         application = SkillApplication(
             application_id=generate_id("app"),
@@ -161,7 +167,7 @@ class SkillLibrary:
             success=success,
             performance=round(performance, 4),
             adaptation_used=adaptation_budget,
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
         self.applications.append(application)
@@ -184,14 +190,16 @@ class SkillLibrary:
         # Generate tests
         tests = []
         for i in range(3):
-            tests.append(SkillTest(
-                test_id=generate_id("test"),
-                name=f"test_{skill_type.value}_{i}",
-                inputs={"input": i},
-                expected_output={"output": i * 2},
-                tolerance=0.1,
-                passed=True,
-            ))
+            tests.append(
+                SkillTest(
+                    test_id=generate_id("test"),
+                    name=f"test_{skill_type.value}_{i}",
+                    inputs={"input": i},
+                    expected_output={"output": i * 2},
+                    tolerance=0.1,
+                    passed=True,
+                )
+            )
 
         skill = Skill(
             skill_id=skill_id,
@@ -210,7 +218,7 @@ class SkillLibrary:
             ),
             performance=performance,
             version=1,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
             learned_from=domain,
         )
 
@@ -264,7 +272,7 @@ class SkillLibrary:
             ),
             performance=min_performance * 0.9,
             version=1,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
             learned_from="composite",
         )
 

@@ -418,10 +418,12 @@ class RunExecutor:
 
                 if counterexamples_found > 0:
                     for i in range(counterexamples_found):
-                        failed_checks.append({
-                            "check": f"edge_case_{i}",
-                            "reason": "timing-dependent path, does not affect seeded determinism",
-                        })
+                        failed_checks.append(
+                            {
+                                "check": f"edge_case_{i}",
+                                "reason": "timing-dependent path, does not affect seeded determinism",
+                            }
+                        )
 
                 obs_counter = await belief_service.create_observation_belief(
                     session=session,
@@ -444,17 +446,22 @@ class RunExecutor:
 
                 # === SELF-HEALING METRICS (only if fault was injected) ===
                 if healing_state.fault_detected:
-                    artifact_refs = [a for a in [
-                        fault_artifact_id,
-                        containment_artifact_id,
-                        rollback_artifact_id,
-                        repair_artifact_id,
-                        regression_artifact_id,
-                    ] if a]
+                    artifact_refs = [
+                        a
+                        for a in [
+                            fault_artifact_id,
+                            containment_artifact_id,
+                            rollback_artifact_id,
+                            repair_artifact_id,
+                            regression_artifact_id,
+                        ]
+                        if a
+                    ]
 
                     # time_to_containment_ms
                     containment_ms = int(
-                        (healing_state.containment_timestamp - healing_state.fault_timestamp) * 1000
+                        (healing_state.containment_timestamp - healing_state.fault_timestamp)
+                        * 1000
                     )
                     obs_containment = await belief_service.create_observation_belief(
                         session=session,
@@ -637,7 +644,11 @@ class RunExecutor:
         )
 
     def _should_inject_fault(
-        self, config: FaultInjectionConfig, current_phase: str, trial_index: int, rng: random.Random
+        self,
+        config: FaultInjectionConfig,
+        current_phase: str,
+        trial_index: int,
+        rng: random.Random,
     ) -> bool:
         """determines if fault should be injected this phase."""
         if not config.enabled:
@@ -695,32 +706,40 @@ class RunExecutor:
         """generates regression tests for fault scenario."""
         tests = []
         if scenario_id == "simple_invariant":
-            tests.append({
-                "name": "test_content_hash_integrity",
-                "type": "invariant",
-                "target": "artifact_store",
-                "assertion": "content_hash matches computed hash",
-            })
+            tests.append(
+                {
+                    "name": "test_content_hash_integrity",
+                    "type": "invariant",
+                    "target": "artifact_store",
+                    "assertion": "content_hash matches computed hash",
+                }
+            )
         elif scenario_id == "intermittent_timing":
-            tests.append({
-                "name": "test_queue_ordering_determinism",
-                "type": "timing",
-                "target": "execution_scheduler",
-                "assertion": "queue order is deterministic with fixed seed",
-            })
-            tests.append({
-                "name": "test_timing_barrier_effectiveness",
-                "type": "timing",
-                "target": "execution_scheduler",
-                "assertion": "synchronization barrier prevents race",
-            })
-            if rng.random() < 0.5:
-                tests.append({
-                    "name": "test_timeout_buffer_sufficiency",
+            tests.append(
+                {
+                    "name": "test_queue_ordering_determinism",
                     "type": "timing",
                     "target": "execution_scheduler",
-                    "assertion": "timeout buffer covers worst-case latency",
-                })
+                    "assertion": "queue order is deterministic with fixed seed",
+                }
+            )
+            tests.append(
+                {
+                    "name": "test_timing_barrier_effectiveness",
+                    "type": "timing",
+                    "target": "execution_scheduler",
+                    "assertion": "synchronization barrier prevents race",
+                }
+            )
+            if rng.random() < 0.5:
+                tests.append(
+                    {
+                        "name": "test_timeout_buffer_sufficiency",
+                        "type": "timing",
+                        "target": "execution_scheduler",
+                        "assertion": "timeout buffer covers worst-case latency",
+                    }
+                )
         return tests
 
     def _generate_trace(self, seed: int) -> str:

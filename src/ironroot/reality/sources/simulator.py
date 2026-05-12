@@ -50,7 +50,9 @@ class HiddenParamSimulator(RealitySource):
         num_trials: int = 10,
     ):
         if environment not in self.ENVIRONMENTS:
-            raise ValueError(f"unknown environment: {environment}. Valid: {list(self.ENVIRONMENTS.keys())}")
+            raise ValueError(
+                f"unknown environment: {environment}. Valid: {list(self.ENVIRONMENTS.keys())}"
+            )
 
         self._environment = environment
         self._env_config = self.ENVIRONMENTS[environment]
@@ -173,12 +175,14 @@ class HiddenParamSimulator(RealitySource):
                 period = 2 * math.pi * math.sqrt(L / g)
                 max_v = theta0 * math.sqrt(g * L)
 
-                self._trial_observations.append({
-                    "trial": trial,
-                    "initial_angle": theta0,
-                    "observed_period": period * rng.uniform(0.98, 1.02),  # add noise
-                    "observed_max_velocity": max_v * rng.uniform(0.95, 1.05),
-                })
+                self._trial_observations.append(
+                    {
+                        "trial": trial,
+                        "initial_angle": theta0,
+                        "observed_period": period * rng.uniform(0.98, 1.02),  # add noise
+                        "observed_max_velocity": max_v * rng.uniform(0.95, 1.05),
+                    }
+                )
 
         elif self._environment == "spring":
             self._hidden_params = {
@@ -194,11 +198,13 @@ class HiddenParamSimulator(RealitySource):
 
                 omega = math.sqrt(k / m)
 
-                self._trial_observations.append({
-                    "trial": trial,
-                    "initial_displacement": x0,
-                    "observed_frequency": omega / (2 * math.pi) * rng.uniform(0.98, 1.02),
-                })
+                self._trial_observations.append(
+                    {
+                        "trial": trial,
+                        "initial_displacement": x0,
+                        "observed_frequency": omega / (2 * math.pi) * rng.uniform(0.98, 1.02),
+                    }
+                )
 
         elif self._environment == "projectile":
             self._hidden_params = {
@@ -218,12 +224,14 @@ class HiddenParamSimulator(RealitySource):
                 range_m = v0 * math.cos(angle_rad) * t_flight
                 max_h = (v0 * math.sin(angle_rad)) ** 2 / (2 * g)
 
-                self._trial_observations.append({
-                    "trial": trial,
-                    "launch_angle": angle,
-                    "observed_range": range_m * rng.uniform(0.9, 1.1),
-                    "observed_max_height": max_h * rng.uniform(0.9, 1.1),
-                })
+                self._trial_observations.append(
+                    {
+                        "trial": trial,
+                        "launch_angle": angle,
+                        "observed_range": range_m * rng.uniform(0.9, 1.1),
+                        "observed_max_height": max_h * rng.uniform(0.9, 1.1),
+                    }
+                )
 
     def _compute_metrics(self) -> dict[str, float]:
         """compute metrics from hidden params."""
@@ -250,7 +258,7 @@ class HiddenParamSimulator(RealitySource):
             v0 = self._hidden_params["initial_velocity"]
             g = 9.81
             metrics["max_height"] = (v0 * 0.707) ** 2 / (2 * g)  # 45 degree
-            metrics["range"] = v0 ** 2 / g  # 45 degree, no drag
+            metrics["range"] = v0**2 / g  # 45 degree, no drag
             metrics["flight_time"] = 2 * v0 * 0.707 / g
             metrics["landing_angle"] = 45.0
 

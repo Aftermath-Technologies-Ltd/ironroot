@@ -19,67 +19,59 @@ deterministic outputs under a fixed seed.
 """
 
 import asyncio
-import hashlib
 import json
 import os
 import random
 import statistics
 import sys
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
-from ironroot.domain.ids import generate_id
-from ironroot.storage.artifact_service import get_artifact_service
-from ironroot.storage.postgres import get_session
+import ironroot.agi.adversarial as adversarial_module
+import ironroot.agi.agency as agency_module
+import ironroot.agi.ensemble as ensemble_module
 
-# Import AGI modules
-from ironroot.agi.reality_sources import (
-    RealitySourceRegistry,
-    get_reality_source_registry,
-    SourceCategory,
-    Prediction,
-)
-from ironroot.agi.transfer import (
-    TransferGate,
-    TransferRegime,
-    get_transfer_gate,
-    Skill,
+# Import module-level globals for reset
+import ironroot.agi.reality_sources as reality_sources_module
+import ironroot.agi.skills as skills_module
+import ironroot.agi.sustained as sustained_module
+import ironroot.agi.tools as tools_module
+import ironroot.agi.transfer as transfer_module
+from ironroot.agi.adversarial import (
+    get_adversarial_suite,
 )
 from ironroot.agi.agency import (
     get_agency_suite,
-    EnvironmentType,
 )
-from ironroot.agi.tools import (
-    get_tool_learning_suite,
+from ironroot.agi.ensemble import (
+    get_world_model_ensemble,
+)
+
+# Import AGI modules
+from ironroot.agi.reality_sources import (
+    Prediction,
+    RealitySourceRegistry,
+    get_reality_source_registry,
+)
+from ironroot.agi.skills import (
+    SkillType,
+    get_skill_library,
 )
 from ironroot.agi.sustained import (
     get_sustained_runner,
 )
-from ironroot.agi.adversarial import (
-    get_adversarial_suite,
+from ironroot.agi.tools import (
+    get_tool_learning_suite,
 )
-from ironroot.agi.skills import (
-    get_skill_library,
-    SkillType,
+from ironroot.agi.transfer import (
+    Skill,
+    get_transfer_gate,
 )
-from ironroot.agi.ensemble import (
-    get_world_model_ensemble,
-    ModelFamily,
-)
-
-# Import module-level globals for reset
-import ironroot.agi.reality_sources as reality_sources_module
-import ironroot.agi.transfer as transfer_module
-import ironroot.agi.agency as agency_module
-import ironroot.agi.tools as tools_module
-import ironroot.agi.sustained as sustained_module
-import ironroot.agi.adversarial as adversarial_module
-import ironroot.agi.skills as skills_module
-import ironroot.agi.ensemble as ensemble_module
+from ironroot.domain.ids import generate_id
+from ironroot.storage.postgres import get_session
 
 
 def reset_singletons():
@@ -97,6 +89,7 @@ def reset_singletons():
 @dataclass
 class GateResult:
     """Result of a gate evaluation."""
+
     gate_name: str
     passed: bool
     score: float
@@ -107,6 +100,7 @@ class GateResult:
 @dataclass
 class CampaignManifest:
     """Complete campaign manifest."""
+
     campaign_id: str
     started_at: str
     completed_at: str | None
@@ -205,7 +199,7 @@ async def run_phase_1_reality_breadth(
                     upper_bound=mid + margin,
                     categorical_prediction=None,
                     confidence=0.8 + rng.uniform(-0.1, 0.1),
-                    locked_at=datetime.now(timezone.utc).isoformat(),
+                    locked_at=datetime.now(UTC).isoformat(),
                     rationale=f"Prior belief about {obs.metric_name}",
                 )
             else:
@@ -216,7 +210,7 @@ async def run_phase_1_reality_breadth(
                     upper_bound=None,
                     categorical_prediction=str(obs.value) if rng.random() > 0.4 else "other",
                     confidence=0.7 + rng.uniform(-0.1, 0.1),
-                    locked_at=datetime.now(timezone.utc).isoformat(),
+                    locked_at=datetime.now(UTC).isoformat(),
                     rationale=f"Prior belief about {obs.metric_name}",
                 )
 
@@ -232,35 +226,40 @@ async def run_phase_1_reality_breadth(
             sources_with_contradictions += 1
             contradictions += source_contradictions
 
-    print(f"  Predictions locked: {sum(len(s._locked_predictions) for s in registry.sources.values())}")
+    print(
+        f"  Predictions locked: {sum(len(s._locked_predictions) for s in registry.sources.values())}"
+    )
     print(f"  Contradictions: {contradictions}")
     print(f"  Sources with contradictions: {sources_with_contradictions}/{len(registry.sources)}")
 
     # Gate: contradictions in at least 50% of sources
     contradiction_rate = sources_with_contradictions / len(registry.sources)
     passed = (
-        len(registry.sources) >= 12 and
-        external >= 6 and
-        len(categories) == 6 and
-        contradiction_rate >= 0.5
+        len(registry.sources) >= 12
+        and external >= 6
+        and len(categories) == 6
+        and contradiction_rate >= 0.5
     )
 
     print(f"\n  Reality Breadth Gate: {'PASS' if passed else 'FAIL'}")
 
-    return GateResult(
-        gate_name="reality_breadth",
-        passed=passed,
-        score=contradiction_rate,
-        details={
-            "sources": len(registry.sources),
-            "external": external,
-            "committed": committed,
-            "categories": len(categories),
-            "contradictions": contradictions,
-            "contradiction_rate": contradiction_rate,
-        },
-        artifacts=[],
-    ), registry
+    return (
+        GateResult(
+            gate_name="reality_breadth",
+            passed=passed,
+            score=contradiction_rate,
+            details={
+                "sources": len(registry.sources),
+                "external": external,
+                "committed": committed,
+                "categories": len(categories),
+                "contradictions": contradictions,
+                "contradiction_rate": contradiction_rate,
+            },
+            artifacts=[],
+        ),
+        registry,
+    )
 
 
 async def run_phase_2_transfer(
@@ -301,16 +300,18 @@ async def run_phase_2_transfer(
             skill_type=skill_type,
             performance=0.7 + random.Random(seed).uniform(0, 0.2),
         )
-        gate.register_skill(Skill(
-            skill_id=skill.skill_id,
-            name=skill.name,
-            domain="tabular",
-            preconditions=skill.preconditions,
-            effects=skill.effects,
-            tests=[t.test_id for t in skill.tests],
-            transfer_metadata={},
-            performance=skill.performance,
-        ))
+        gate.register_skill(
+            Skill(
+                skill_id=skill.skill_id,
+                name=skill.name,
+                domain="tabular",
+                preconditions=skill.preconditions,
+                effects=skill.effects,
+                tests=[t.test_id for t in skill.tests],
+                transfer_metadata={},
+                performance=skill.performance,
+            )
+        )
 
     source_ids = list(registry.sources.keys())
     training = source_ids[:4]
@@ -319,13 +320,17 @@ async def run_phase_2_transfer(
     # Zero-shot
     print("\n  Zero-Shot Transfer:")
     zero_shot_report = await gate.evaluate_zero_shot(session, training, evaluation, run_id)
-    print(f"    Sources passing: {zero_shot_report.sources_passing}/{zero_shot_report.sources_total}")
+    print(
+        f"    Sources passing: {zero_shot_report.sources_passing}/{zero_shot_report.sources_total}"
+    )
     print(f"    Gate: {'PASS' if zero_shot_report.gate_passed else 'FAIL'}")
 
     # Few-shot
     print("\n  Few-Shot Transfer:")
     few_shot_report = await gate.evaluate_few_shot(session, training, evaluation, run_id)
-    print(f"    Sources passing: {few_shot_report.sources_passing}/{few_shot_report.sources_total}")
+    print(
+        f"    Sources passing: {few_shot_report.sources_passing}/{few_shot_report.sources_total}"
+    )
     print(f"    Regressions detected: {few_shot_report.regression_detected}")
     print(f"    Gate: {'PASS' if few_shot_report.gate_passed else 'FAIL'}")
 
@@ -335,13 +340,15 @@ async def run_phase_2_transfer(
     compositional_report = await gate.evaluate_compositional(
         session, skill_ids, evaluation[:4], run_id
     )
-    print(f"    Sources passing: {compositional_report.sources_passing}/{compositional_report.sources_total}")
+    print(
+        f"    Sources passing: {compositional_report.sources_passing}/{compositional_report.sources_total}"
+    )
     print(f"    Gate: {'PASS' if compositional_report.gate_passed else 'FAIL'}")
 
     passed = (
-        zero_shot_report.gate_passed and
-        few_shot_report.gate_passed and
-        compositional_report.gate_passed
+        zero_shot_report.gate_passed
+        and few_shot_report.gate_passed
+        and compositional_report.gate_passed
     )
 
     print(f"\n  Transfer Gate (All): {'PASS' if passed else 'FAIL'}")
@@ -350,10 +357,11 @@ async def run_phase_2_transfer(
         gate_name="transfer",
         passed=passed,
         score=(
-            (1 if zero_shot_report.gate_passed else 0) +
-            (1 if few_shot_report.gate_passed else 0) +
-            (1 if compositional_report.gate_passed else 0)
-        ) / 3,
+            (1 if zero_shot_report.gate_passed else 0)
+            + (1 if few_shot_report.gate_passed else 0)
+            + (1 if compositional_report.gate_passed else 0)
+        )
+        / 3,
         details={
             "zero_shot_passed": zero_shot_report.gate_passed,
             "few_shot_passed": few_shot_report.gate_passed,
@@ -399,8 +407,8 @@ async def run_phase_3_agency(
     # Gate: success rate above threshold, recovers from shifts, logs revisions
     # Agency gate passes if we demonstrate competence across environments
     passed = (
-        avg_success >= 0.15 and  # Minimum competence threshold
-        total_revisions >= 10  # Evidence of planning
+        avg_success >= 0.15  # Minimum competence threshold
+        and total_revisions >= 10  # Evidence of planning
     )
 
     print(f"\n  Overall Success Rate: {avg_success:.2%}")
@@ -492,8 +500,14 @@ async def run_phase_5_sustained(
     print(f"  Catastrophic regressions: {report.catastrophic_regressions}")
 
     for trend in report.trend_analyses:
-        direction_symbol = "↑" if trend.trend_direction == "improving" else ("↓" if trend.trend_direction == "declining" else "→")
-        print(f"  {trend.metric_name}: {direction_symbol} (p={trend.p_value:.4f}, sig={trend.significant})")
+        direction_symbol = (
+            "↑"
+            if trend.trend_direction == "improving"
+            else ("↓" if trend.trend_direction == "declining" else "→")
+        )
+        print(
+            f"  {trend.metric_name}: {direction_symbol} (p={trend.p_value:.4f}, sig={trend.significant})"
+        )
 
     print(f"\n  Gate: {'PASS' if report.gate_passed else 'FAIL'}")
 
@@ -558,7 +572,7 @@ async def run_full_campaign(seed: int = 42) -> CampaignManifest:
 
     campaign_id = generate_id("campaign")
     run_id = generate_id("run")
-    started_at = datetime.now(timezone.utc).isoformat()
+    started_at = datetime.now(UTC).isoformat()
 
     print("\n" + "=" * 80)
     print("EXPERIMENTAL: agi-suite integration harness")
@@ -598,7 +612,7 @@ async def run_full_campaign(seed: int = 42) -> CampaignManifest:
 
         await session.commit()
 
-    completed_at = datetime.now(timezone.utc).isoformat()
+    completed_at = datetime.now(UTC).isoformat()
 
     # Compile results
     all_results = [
@@ -641,7 +655,8 @@ async def run_full_campaign(seed: int = 42) -> CampaignManifest:
         improvement_trend=sustained_result.details["trends"].get("composite_score", "unknown"),
         catastrophic_regressions=sustained_result.details["catastrophic_regressions"],
         attacks_tested=adversarial_result.details["attacks"],
-        detection_rate=adversarial_result.details["detected"] / adversarial_result.details["attacks"],
+        detection_rate=adversarial_result.details["detected"]
+        / adversarial_result.details["attacks"],
         uncertainty_calibration=adversarial_result.details["calibration"],
         gates_passed=gates_passed,
         gates_total=gates_total,
@@ -657,12 +672,24 @@ async def run_full_campaign(seed: int = 42) -> CampaignManifest:
     print(f"\n  Campaign: {manifest.campaign_id}")
     print(f"  Duration: {started_at} to {completed_at}")
 
-    print(f"\n  Phase 1 (Reality): {reality_result.details['sources']} sources, {reality_result.details['external']} external")
-    print(f"  Phase 2 (Transfer): ZS={manifest.zero_shot_passed}, FS={manifest.few_shot_passed}, Comp={manifest.compositional_passed}")
-    print(f"  Phase 3 (Agency): {manifest.long_horizon_success_rate:.1%} success, {manifest.plan_revisions_logged} revisions")
-    print(f"  Phase 4 (Tools): {manifest.tools_onboarded} tools, {manifest.tool_competence_avg:.1%} competence")
-    print(f"  Phase 5 (Sustained): {manifest.days_evaluated} days, trend={manifest.improvement_trend}")
-    print(f"  Phase 6 (Adversarial): {manifest.detection_rate:.1%} detection, {manifest.uncertainty_calibration:.1%} calibration")
+    print(
+        f"\n  Phase 1 (Reality): {reality_result.details['sources']} sources, {reality_result.details['external']} external"
+    )
+    print(
+        f"  Phase 2 (Transfer): ZS={manifest.zero_shot_passed}, FS={manifest.few_shot_passed}, Comp={manifest.compositional_passed}"
+    )
+    print(
+        f"  Phase 3 (Agency): {manifest.long_horizon_success_rate:.1%} success, {manifest.plan_revisions_logged} revisions"
+    )
+    print(
+        f"  Phase 4 (Tools): {manifest.tools_onboarded} tools, {manifest.tool_competence_avg:.1%} competence"
+    )
+    print(
+        f"  Phase 5 (Sustained): {manifest.days_evaluated} days, trend={manifest.improvement_trend}"
+    )
+    print(
+        f"  Phase 6 (Adversarial): {manifest.detection_rate:.1%} detection, {manifest.uncertainty_calibration:.1%} calibration"
+    )
 
     print(f"\n  Gates Passed: {gates_passed}/{gates_total}")
     print(f"  Final Score: {final_score:.2%}")
@@ -670,55 +697,58 @@ async def run_full_campaign(seed: int = 42) -> CampaignManifest:
 
     # Save manifest
     manifest_path = os.path.join(
-        os.path.dirname(__file__), "..", "..", "artifacts",
-        f"campaign_manifest_{campaign_id}.json"
+        os.path.dirname(__file__), "..", "..", "artifacts", f"campaign_manifest_{campaign_id}.json"
     )
     os.makedirs(os.path.dirname(manifest_path), exist_ok=True)
 
     with open(manifest_path, "w") as f:
-        json.dump({
-            "campaign_id": manifest.campaign_id,
-            "started_at": manifest.started_at,
-            "completed_at": manifest.completed_at,
-            "seed": manifest.seed,
-            "phase_1_reality": {
-                "sources": manifest.reality_sources,
-                "external": manifest.external_sources,
-                "committed": manifest.committed_sources,
-                "categories": manifest.categories_covered,
-                "contradictions": manifest.contradictions_detected,
+        json.dump(
+            {
+                "campaign_id": manifest.campaign_id,
+                "started_at": manifest.started_at,
+                "completed_at": manifest.completed_at,
+                "seed": manifest.seed,
+                "phase_1_reality": {
+                    "sources": manifest.reality_sources,
+                    "external": manifest.external_sources,
+                    "committed": manifest.committed_sources,
+                    "categories": manifest.categories_covered,
+                    "contradictions": manifest.contradictions_detected,
+                },
+                "phase_2_transfer": {
+                    "zero_shot_passed": manifest.zero_shot_passed,
+                    "few_shot_passed": manifest.few_shot_passed,
+                    "compositional_passed": manifest.compositional_passed,
+                },
+                "phase_3_agency": {
+                    "environments": manifest.environments_tested,
+                    "success_rate": manifest.long_horizon_success_rate,
+                    "plan_revisions": manifest.plan_revisions_logged,
+                },
+                "phase_4_tools": {
+                    "onboarded": manifest.tools_onboarded,
+                    "competence": manifest.tool_competence_avg,
+                },
+                "phase_5_sustained": {
+                    "days": manifest.days_evaluated,
+                    "trend": manifest.improvement_trend,
+                    "catastrophic_regressions": manifest.catastrophic_regressions,
+                },
+                "phase_6_adversarial": {
+                    "attacks": manifest.attacks_tested,
+                    "detection_rate": manifest.detection_rate,
+                    "calibration": manifest.uncertainty_calibration,
+                },
+                "summary": {
+                    "gates_passed": manifest.gates_passed,
+                    "gates_total": manifest.gates_total,
+                    "final_score": manifest.final_score,
+                    "agi_claim_valid": manifest.agi_claim_valid,
+                },
             },
-            "phase_2_transfer": {
-                "zero_shot_passed": manifest.zero_shot_passed,
-                "few_shot_passed": manifest.few_shot_passed,
-                "compositional_passed": manifest.compositional_passed,
-            },
-            "phase_3_agency": {
-                "environments": manifest.environments_tested,
-                "success_rate": manifest.long_horizon_success_rate,
-                "plan_revisions": manifest.plan_revisions_logged,
-            },
-            "phase_4_tools": {
-                "onboarded": manifest.tools_onboarded,
-                "competence": manifest.tool_competence_avg,
-            },
-            "phase_5_sustained": {
-                "days": manifest.days_evaluated,
-                "trend": manifest.improvement_trend,
-                "catastrophic_regressions": manifest.catastrophic_regressions,
-            },
-            "phase_6_adversarial": {
-                "attacks": manifest.attacks_tested,
-                "detection_rate": manifest.detection_rate,
-                "calibration": manifest.uncertainty_calibration,
-            },
-            "summary": {
-                "gates_passed": manifest.gates_passed,
-                "gates_total": manifest.gates_total,
-                "final_score": manifest.final_score,
-                "agi_claim_valid": manifest.agi_claim_valid,
-            },
-        }, f, indent=2)
+            f,
+            indent=2,
+        )
 
     print(f"\n  Manifest saved: {manifest_path}")
 

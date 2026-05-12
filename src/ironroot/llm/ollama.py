@@ -76,7 +76,9 @@ class OllamaClient(LLMClient):
 
         For hybrid mode, use GrokClient for search queries.
         """
-        search_system = system or "You are a research assistant. Answer based on your training knowledge."
+        search_system = (
+            system or "You are a research assistant. Answer based on your training knowledge."
+        )
         return await self.complete(
             query,
             system=search_system,

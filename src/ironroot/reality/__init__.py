@@ -179,6 +179,7 @@ class HiddenParameterDataset(RealitySource):
 
         # compute holdout split deterministically
         import random
+
         rng = random.Random(self._seed)
         indices = list(range(len(qualities)))
         rng.shuffle(indices)
@@ -190,6 +191,7 @@ class HiddenParameterDataset(RealitySource):
 
         # compute hidden parameters (these are the "reality" values)
         import statistics
+
         mean_quality = statistics.mean(holdout_qualities)
         std_quality = statistics.stdev(holdout_qualities) if len(holdout_qualities) > 1 else 0.0
 
@@ -198,14 +200,18 @@ class HiddenParameterDataset(RealitySource):
         if n > 1:
             mean_a = statistics.mean(holdout_alcohols)
             mean_q = mean_quality
-            numerator = sum((a - mean_a) * (q - mean_q) for a, q in zip(holdout_alcohols, holdout_qualities))
+            numerator = sum(
+                (a - mean_a) * (q - mean_q) for a, q in zip(holdout_alcohols, holdout_qualities)
+            )
             denom_a = sum((a - mean_a) ** 2 for a in holdout_alcohols) ** 0.5
             denom_q = sum((q - mean_q) ** 2 for q in holdout_qualities) ** 0.5
             correlation = numerator / (denom_a * denom_q) if denom_a * denom_q > 0 else 0.0
         else:
             correlation = 0.0
 
-        high_quality_fraction = sum(1 for q in holdout_qualities if q >= 7) / len(holdout_qualities)
+        high_quality_fraction = sum(1 for q in holdout_qualities if q >= 7) / len(
+            holdout_qualities
+        )
 
         self._hidden_params = {
             "mean_quality": round(mean_quality, 4),
@@ -231,7 +237,11 @@ class HiddenParameterDataset(RealitySource):
                 source_id=self._source_id,
                 metric_name=metric_name,
                 value=value,
-                unit="ratio" if "fraction" in metric_name or "correlation" in metric_name else "score",
+                unit=(
+                    "ratio"
+                    if "fraction" in metric_name or "correlation" in metric_name
+                    else "score"
+                ),
                 timestamp=acquisition_time,
                 provenance=provenance,
                 raw_data=raw_data if metric_name == "mean_quality" else None,
@@ -244,7 +254,7 @@ class HiddenParameterDataset(RealitySource):
     def _get_fallback_data(self) -> bytes:
         """embedded sample for offline testing."""
         # Real subset of UCI Wine Quality data
-        return b'''"fixed acidity";"volatile acidity";"citric acid";"residual sugar";"chlorides";"free sulfur dioxide";"total sulfur dioxide";"density";"pH";"sulphates";"alcohol";"quality"
+        return b""""fixed acidity";"volatile acidity";"citric acid";"residual sugar";"chlorides";"free sulfur dioxide";"total sulfur dioxide";"density";"pH";"sulphates";"alcohol";"quality"
 7.4;0.7;0;1.9;0.076;11;34;0.9978;3.51;0.56;9.4;5
 7.8;0.88;0;2.6;0.098;25;67;0.9968;3.2;0.68;9.8;5
 7.8;0.76;0.04;2.3;0.092;15;54;0.997;3.26;0.65;9.8;5
@@ -255,7 +265,7 @@ class HiddenParameterDataset(RealitySource):
 7.3;0.65;0;1.2;0.065;15;21;0.9946;3.39;0.47;10;7
 7.8;0.58;0.02;2;0.073;9;18;0.9968;3.36;0.57;9.5;7
 7.5;0.5;0.36;6.1;0.071;17;102;0.9978;3.35;0.8;10.5;5
-'''
+"""
 
 
 class RealityInterfaceLayer:

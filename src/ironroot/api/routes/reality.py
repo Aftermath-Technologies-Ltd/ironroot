@@ -9,10 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.api.deps import RequestIdDep, get_db_session
 from ironroot.beliefs.belief_service import get_belief_service
-from ironroot.domain.ids import generate_id
-from ironroot.reality import get_reality_interface, HiddenParameterDataset
-from ironroot.reality.executor import get_reality_executor
 from ironroot.orchestration.run_service import get_run_service
+from ironroot.reality.executor import get_reality_executor
 
 router = APIRouter()
 
@@ -147,16 +145,13 @@ async def get_falsification_details(
     session: AsyncSession = Depends(get_db_session),
 ) -> FalsificationDetailResponse:
     """returns detailed results from a falsification run."""
-    belief_service = get_belief_service()
-
     # get all beliefs for this run
     from sqlalchemy import select
-    from ironroot.storage.models import BeliefRecord
-    from ironroot.beliefs.belief_service import BeliefType
 
-    result = await session.execute(
-        select(BeliefRecord).where(BeliefRecord.run_id == run_id)
-    )
+    from ironroot.beliefs.belief_service import BeliefType
+    from ironroot.storage.models import BeliefRecord
+
+    result = await session.execute(select(BeliefRecord).where(BeliefRecord.run_id == run_id))
     beliefs = list(result.scalars().all())
 
     predictions = [b for b in beliefs if b.belief_type == BeliefType.PREDICTION.value]
@@ -170,6 +165,7 @@ async def get_falsification_details(
 
     # get contract from artifacts
     from ironroot.storage.models import ArtifactRecord
+
     art_result = await session.execute(
         select(ArtifactRecord)
         .where(ArtifactRecord.run_id == run_id)
@@ -179,7 +175,9 @@ async def get_falsification_details(
     contract = {}
     if contract_artifact:
         import json
+
         from ironroot.storage.artifact_service import get_artifact_service
+
         artifact_service = get_artifact_service()
         contract_data = artifact_service.retrieve_data(contract_artifact.content_hash)
         if contract_data:
@@ -196,7 +194,9 @@ async def get_falsification_details(
     obs_list = []
     if prov_artifact:
         import json
+
         from ironroot.storage.artifact_service import get_artifact_service
+
         artifact_service = get_artifact_service()
         prov_data = artifact_service.retrieve_data(prov_artifact.content_hash)
         if prov_data:
@@ -212,15 +212,17 @@ async def get_falsification_details(
 
     for pred in predictions:
         content = pred.content
-        outcomes.append(PredictionOutcome(
-            prediction_id=pred.id,
-            metric_name=content.get("metric_name", "unknown"),
-            predicted_lower=content.get("predicted_lower", 0),
-            predicted_upper=content.get("predicted_upper", 0),
-            observed_value=content.get("observed_value", 0) or 0,
-            confirmed=content.get("status") == "confirmed",
-            penalty=content.get("penalty_applied", 0) or 0,
-        ))
+        outcomes.append(
+            PredictionOutcome(
+                prediction_id=pred.id,
+                metric_name=content.get("metric_name", "unknown"),
+                predicted_lower=content.get("predicted_lower", 0),
+                predicted_upper=content.get("predicted_upper", 0),
+                observed_value=content.get("observed_value", 0) or 0,
+                confirmed=content.get("status") == "confirmed",
+                penalty=content.get("penalty_applied", 0) or 0,
+            )
+        )
         if content.get("status") == "contradicted":
             contradictions += 1
             total_penalty += content.get("penalty_applied", 0) or 0

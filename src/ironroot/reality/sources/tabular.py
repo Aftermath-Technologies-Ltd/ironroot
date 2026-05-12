@@ -40,7 +40,12 @@ class TabularDatasetSource(RealitySource):
             "url": "https://archive.ics.uci.edu/ml/machine-learning-databases/iris/iris.data",
             "delimiter": ",",
             "target_col": -1,
-            "metrics": ["mean_sepal_length", "std_sepal_length", "class_balance", "feature_correlation"],
+            "metrics": [
+                "mean_sepal_length",
+                "std_sepal_length",
+                "class_balance",
+                "feature_correlation",
+            ],
         },
         "adult_income": {
             "url": "https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data",
@@ -57,7 +62,9 @@ class TabularDatasetSource(RealitySource):
         seed: int = 42,
     ):
         if dataset_name not in self.DATASETS:
-            raise ValueError(f"unknown dataset: {dataset_name}. Valid: {list(self.DATASETS.keys())}")
+            raise ValueError(
+                f"unknown dataset: {dataset_name}. Valid: {list(self.DATASETS.keys())}"
+            )
 
         self._dataset_name = dataset_name
         self._dataset_config = self.DATASETS[dataset_name]
@@ -184,15 +191,21 @@ class TabularDatasetSource(RealitySource):
         if self._dataset_name == "wine_quality":
             numeric_targets = [float(t) for t in holdout_targets]
             metrics["mean_target"] = round(statistics.mean(numeric_targets), 4)
-            metrics["std_target"] = round(statistics.stdev(numeric_targets) if len(numeric_targets) > 1 else 0.0, 4)
-            metrics["class_balance"] = round(sum(1 for t in numeric_targets if t >= 7) / len(numeric_targets), 4)
+            metrics["std_target"] = round(
+                statistics.stdev(numeric_targets) if len(numeric_targets) > 1 else 0.0, 4
+            )
+            metrics["class_balance"] = round(
+                sum(1 for t in numeric_targets if t >= 7) / len(numeric_targets), 4
+            )
 
             if holdout_values:
                 first_col = [v[0] for v in holdout_values]
                 if len(first_col) > 1:
                     mean_f = statistics.mean(first_col)
                     mean_t = metrics["mean_target"]
-                    num = sum((f - mean_f) * (t - mean_t) for f, t in zip(first_col, numeric_targets))
+                    num = sum(
+                        (f - mean_f) * (t - mean_t) for f, t in zip(first_col, numeric_targets)
+                    )
                     denom_f = sum((f - mean_f) ** 2 for f in first_col) ** 0.5
                     denom_t = sum((t - mean_t) ** 2 for t in numeric_targets) ** 0.5
                     corr = num / (denom_f * denom_t) if denom_f * denom_t > 0 else 0.0
@@ -209,7 +222,9 @@ class TabularDatasetSource(RealitySource):
             if holdout_values:
                 sepal_lengths = [v[0] for v in holdout_values]
                 metrics["mean_sepal_length"] = round(statistics.mean(sepal_lengths), 4)
-                metrics["std_sepal_length"] = round(statistics.stdev(sepal_lengths) if len(sepal_lengths) > 1 else 0.0, 4)
+                metrics["std_sepal_length"] = round(
+                    statistics.stdev(sepal_lengths) if len(sepal_lengths) > 1 else 0.0, 4
+                )
                 metrics["feature_correlation"] = 0.0  # placeholder
 
         return metrics
@@ -217,11 +232,11 @@ class TabularDatasetSource(RealitySource):
     def _get_fallback_data(self) -> bytes:
         """embedded sample for offline testing."""
         if self._dataset_name == "wine_quality":
-            return b'''"fixed acidity";"volatile acidity";"citric acid";"residual sugar";"chlorides";"free sulfur dioxide";"total sulfur dioxide";"density";"pH";"sulphates";"alcohol";"quality"
+            return b""""fixed acidity";"volatile acidity";"citric acid";"residual sugar";"chlorides";"free sulfur dioxide";"total sulfur dioxide";"density";"pH";"sulphates";"alcohol";"quality"
 7.4;0.7;0;1.9;0.076;11;34;0.9978;3.51;0.56;9.4;5
 7.8;0.88;0;2.6;0.098;25;67;0.9968;3.2;0.68;9.8;5
 7.8;0.76;0.04;2.3;0.092;15;54;0.997;3.26;0.65;9.8;5
 11.2;0.28;0.56;1.9;0.075;17;60;0.998;3.16;0.58;9.8;6
 7.4;0.7;0;1.9;0.076;11;34;0.9978;3.51;0.56;9.4;5
-'''
+"""
         return b""

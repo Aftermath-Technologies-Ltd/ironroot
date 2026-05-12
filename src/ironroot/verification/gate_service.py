@@ -35,9 +35,7 @@ class GateService:
             raise NotFoundError("run", run_id)
 
         # reject gate execution on idle runs - no activity = no meaningful validation
-        has_activity = (
-            run.steps_used > 0 or run.tool_calls_used > 0 or run.belief_writes_used > 0
-        )
+        has_activity = run.steps_used > 0 or run.tool_calls_used > 0 or run.belief_writes_used > 0
         if not has_activity:
             raise ValueError(
                 f"cannot execute gates on idle run {run_id}: "

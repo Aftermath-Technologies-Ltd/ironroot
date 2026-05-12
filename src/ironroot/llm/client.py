@@ -10,6 +10,7 @@ from typing import Any
 @dataclass
 class Citation:
     """A citation from web search."""
+
     url: str
     title: str | None = None
     snippet: str | None = None
@@ -18,6 +19,7 @@ class Citation:
 @dataclass
 class LLMResponse:
     """Response from an LLM call."""
+
     content: str
     model: str
     citations: list[Citation] = field(default_factory=list)
@@ -62,12 +64,15 @@ def get_llm_client() -> LLMClient:
 
     if provider == "grok":
         from ironroot.llm.grok import GrokClient
+
         return GrokClient()
     elif provider == "ollama":
         from ironroot.llm.ollama import OllamaClient
+
         return OllamaClient()
     elif provider == "hybrid":
         from ironroot.llm.hybrid import HybridClient
+
         return HybridClient()
     else:
         raise ValueError(f"Unknown LLM provider: {provider}")

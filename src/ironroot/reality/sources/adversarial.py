@@ -30,15 +30,30 @@ class AdversarialSource(RealitySource):
 
     ATTACK_TYPES = {
         "covariate_shift": {
-            "metrics": ["shift_magnitude", "accuracy_drop", "calibration_error", "ood_detection_rate"],
+            "metrics": [
+                "shift_magnitude",
+                "accuracy_drop",
+                "calibration_error",
+                "ood_detection_rate",
+            ],
             "description": "Input distribution shifts between train and test",
         },
         "label_noise": {
-            "metrics": ["noise_rate", "accuracy_on_clean", "accuracy_on_noisy", "noise_detection_rate"],
+            "metrics": [
+                "noise_rate",
+                "accuracy_on_clean",
+                "accuracy_on_noisy",
+                "noise_detection_rate",
+            ],
             "description": "Some labels are corrupted",
         },
         "concept_drift": {
-            "metrics": ["drift_magnitude", "adaptation_speed", "performance_degradation", "detection_delay"],
+            "metrics": [
+                "drift_magnitude",
+                "adaptation_speed",
+                "performance_degradation",
+                "detection_delay",
+            ],
             "description": "True relationship changes over time",
         },
     }
@@ -51,7 +66,9 @@ class AdversarialSource(RealitySource):
         sample_size: int = 200,
     ):
         if attack_type not in self.ATTACK_TYPES:
-            raise ValueError(f"unknown attack: {attack_type}. Valid: {list(self.ATTACK_TYPES.keys())}")
+            raise ValueError(
+                f"unknown attack: {attack_type}. Valid: {list(self.ATTACK_TYPES.keys())}"
+            )
 
         self._attack_type = attack_type
         self._attack_config = self.ATTACK_TYPES[attack_type]
@@ -213,7 +230,9 @@ class AdversarialSource(RealitySource):
                 if i >= midpoint:
                     # apply concept drift
                     if rng.random() < self._severity:
-                        self._adversarial_data.append({"x": d["x"], "y": 1 - d["y"], "t": i, "drifted": True})
+                        self._adversarial_data.append(
+                            {"x": d["x"], "y": 1 - d["y"], "t": i, "drifted": True}
+                        )
                     else:
                         self._adversarial_data.append({**d, "drifted": False})
                 else:

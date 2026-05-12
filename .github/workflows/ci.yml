@@ -80,6 +80,7 @@ jobs:
 
       - name: Run tests with coverage
         env:
+          IRONROOT_DEBUG: "true"
           IRONROOT_DB_HOST: localhost
           IRONROOT_DB_PORT: 5432
           IRONROOT_DB_NAME: ironroot_test

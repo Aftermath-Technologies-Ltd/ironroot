@@ -2,7 +2,6 @@
 """xAI Grok API client with web search capabilities."""
 
 import os
-from typing import Any
 
 import httpx
 
@@ -103,11 +102,13 @@ class GrokClient(LLMClient):
         citations = []
         if "citations" in data:
             for cite in data["citations"]:
-                citations.append(Citation(
-                    url=cite.get("url", ""),
-                    title=cite.get("title"),
-                    snippet=cite.get("snippet"),
-                ))
+                citations.append(
+                    Citation(
+                        url=cite.get("url", ""),
+                        title=cite.get("title"),
+                        snippet=cite.get("snippet"),
+                    )
+                )
 
         return LLMResponse(
             content=data["choices"][0]["message"]["content"],

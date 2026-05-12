@@ -9,14 +9,15 @@ This module parses user criteria to:
 """
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 
 class ResearchIntent(str, Enum):
     """Primary intent of the research request."""
+
     COMPARISON = "comparison"  # X vs Y, pros/cons
-    CAUSATION = "causation"    # Does X cause Y
+    CAUSATION = "causation"  # Does X cause Y
     MEASUREMENT = "measurement"  # How much, what level
     PREDICTION = "prediction"  # Will X happen
     EXPLORATION = "exploration"  # General understanding
@@ -26,6 +27,7 @@ class ResearchIntent(str, Enum):
 @dataclass
 class TopicExtraction:
     """Extracted topics from user criteria."""
+
     primary_topics: list[str]
     secondary_topics: list[str]
     keywords: list[str]
@@ -37,6 +39,7 @@ class TopicExtraction:
 @dataclass
 class ResearchDomain:
     """A research domain with relevant sources and question templates."""
+
     name: str
     keywords: list[str]
     question_templates: list[str]
@@ -48,80 +51,230 @@ class ResearchDomain:
 # Topic keyword mappings
 TOPIC_KEYWORDS = {
     "artificial_intelligence": [
-        "ai", "artificial intelligence", "machine learning", "ml", "deep learning",
-        "neural network", "llm", "large language model", "gpt", "chatgpt", "claude",
-        "generative ai", "genai", "transformer", "nlp", "natural language",
-        "computer vision", "robotics", "automation", "algorithm",
-        "reinforcement learning", "reinforced learning", "rl", "supervised learning",
-        "unsupervised learning", "training", "model", "inference", "fine-tuning",
-        "accuracy", "precision", "recall", "f1", "benchmark", "performance",
-        "classification", "regression", "prediction", "neural", "network",
-        "gradient", "backpropagation", "optimization", "loss function"
+        "ai",
+        "artificial intelligence",
+        "machine learning",
+        "ml",
+        "deep learning",
+        "neural network",
+        "llm",
+        "large language model",
+        "gpt",
+        "chatgpt",
+        "claude",
+        "generative ai",
+        "genai",
+        "transformer",
+        "nlp",
+        "natural language",
+        "computer vision",
+        "robotics",
+        "automation",
+        "algorithm",
+        "reinforcement learning",
+        "reinforced learning",
+        "rl",
+        "supervised learning",
+        "unsupervised learning",
+        "training",
+        "model",
+        "inference",
+        "fine-tuning",
+        "accuracy",
+        "precision",
+        "recall",
+        "f1",
+        "benchmark",
+        "performance",
+        "classification",
+        "regression",
+        "prediction",
+        "neural",
+        "network",
+        "gradient",
+        "backpropagation",
+        "optimization",
+        "loss function",
     ],
     "cybersecurity": [
-        "security", "cybersecurity", "cyber", "hack", "hacking", "vulnerability",
-        "exploit", "malware", "ransomware", "phishing", "attack", "threat",
-        "breach", "data breach", "privacy", "encryption", "authentication",
-        "firewall", "intrusion", "risk", "cve", "zero-day"
+        "security",
+        "cybersecurity",
+        "cyber",
+        "hack",
+        "hacking",
+        "vulnerability",
+        "exploit",
+        "malware",
+        "ransomware",
+        "phishing",
+        "attack",
+        "threat",
+        "breach",
+        "data breach",
+        "privacy",
+        "encryption",
+        "authentication",
+        "firewall",
+        "intrusion",
+        "risk",
+        "cve",
+        "zero-day",
     ],
     "technology": [
-        "technology", "tech", "software", "hardware", "computer", "digital",
-        "internet", "cloud", "saas", "platform", "system", "infrastructure",
-        "data", "database", "api", "code", "programming", "development"
+        "technology",
+        "tech",
+        "software",
+        "hardware",
+        "computer",
+        "digital",
+        "internet",
+        "cloud",
+        "saas",
+        "platform",
+        "system",
+        "infrastructure",
+        "data",
+        "database",
+        "api",
+        "code",
+        "programming",
+        "development",
     ],
     "business": [
-        "business", "company", "enterprise", "corporate", "industry", "market",
-        "revenue", "profit", "cost", "roi", "productivity", "efficiency",
-        "workforce", "employment", "job", "labor", "economy", "economic"
+        "business",
+        "company",
+        "enterprise",
+        "corporate",
+        "industry",
+        "market",
+        "revenue",
+        "profit",
+        "cost",
+        "roi",
+        "productivity",
+        "efficiency",
+        "workforce",
+        "employment",
+        "job",
+        "labor",
+        "economy",
+        "economic",
     ],
     "healthcare": [
-        "health", "healthcare", "medical", "medicine", "clinical", "patient",
-        "diagnosis", "treatment", "drug", "pharmaceutical", "hospital", "doctor"
+        "health",
+        "healthcare",
+        "medical",
+        "medicine",
+        "clinical",
+        "patient",
+        "diagnosis",
+        "treatment",
+        "drug",
+        "pharmaceutical",
+        "hospital",
+        "doctor",
     ],
     "finance": [
-        "finance", "financial", "bank", "banking", "investment", "stock",
-        "trading", "cryptocurrency", "crypto", "bitcoin", "fraud", "money"
+        "finance",
+        "financial",
+        "bank",
+        "banking",
+        "investment",
+        "stock",
+        "trading",
+        "cryptocurrency",
+        "crypto",
+        "bitcoin",
+        "fraud",
+        "money",
     ],
     "education": [
-        "education", "school", "university", "student", "teaching",
-        "academic", "curriculum", "classroom", "teacher", "pedagogy"
+        "education",
+        "school",
+        "university",
+        "student",
+        "teaching",
+        "academic",
+        "curriculum",
+        "classroom",
+        "teacher",
+        "pedagogy",
     ],
     "environment": [
-        "climate", "environment", "environmental", "sustainability", "carbon",
-        "emissions", "pollution", "renewable", "energy", "green"
+        "climate",
+        "environment",
+        "environmental",
+        "sustainability",
+        "carbon",
+        "emissions",
+        "pollution",
+        "renewable",
+        "energy",
+        "green",
     ],
     "society": [
-        "society", "social", "culture", "ethics", "ethical", "bias", "fairness",
-        "discrimination", "human", "rights", "regulation", "policy", "law", "legal"
+        "society",
+        "social",
+        "culture",
+        "ethics",
+        "ethical",
+        "bias",
+        "fairness",
+        "discrimination",
+        "human",
+        "rights",
+        "regulation",
+        "policy",
+        "law",
+        "legal",
     ],
 }
 
 # Intent detection patterns
 INTENT_PATTERNS = {
     ResearchIntent.COMPARISON: [
-        r"\bvs\b", r"\bversus\b", r"\bcompare\b", r"\bcomparison\b",
+        r"\bvs\b",
+        r"\bversus\b",
+        r"\bcompare\b",
+        r"\bcomparison\b",
         r"\bor\b.*\b(benefit|risk|advantage|disadvantage)\b",
         r"\b(risk|benefit)\b.*\bor\b",
         r"\bpros?\s*(and|&)\s*cons?\b",
         r"\b(better|worse)\b.*\bthan\b",
     ],
     ResearchIntent.CAUSATION: [
-        r"\bcause[sd]?\b", r"\blead[s]?\s*to\b", r"\bresult[s]?\s*in\b",
-        r"\beffect[s]?\s*(of|on)\b", r"\bimpact[s]?\s*(of|on)\b",
-        r"\binfluence[s]?\b", r"\bdoes\b.*\b(affect|change|improve)\b",
+        r"\bcause[sd]?\b",
+        r"\blead[s]?\s*to\b",
+        r"\bresult[s]?\s*in\b",
+        r"\beffect[s]?\s*(of|on)\b",
+        r"\bimpact[s]?\s*(of|on)\b",
+        r"\binfluence[s]?\b",
+        r"\bdoes\b.*\b(affect|change|improve)\b",
     ],
     ResearchIntent.MEASUREMENT: [
-        r"\bhow\s+(much|many|often|long)\b", r"\bwhat\s+(level|amount|rate)\b",
-        r"\bmeasure\b", r"\bquantify\b", r"\bstatistics?\b",
+        r"\bhow\s+(much|many|often|long)\b",
+        r"\bwhat\s+(level|amount|rate)\b",
+        r"\bmeasure\b",
+        r"\bquantify\b",
+        r"\bstatistics?\b",
     ],
     ResearchIntent.PREDICTION: [
-        r"\bwill\b", r"\bfuture\b", r"\bpredict\b", r"\bforecast\b",
-        r"\btrend\b", r"\bexpect\b", r"\banticipate\b",
+        r"\bwill\b",
+        r"\bfuture\b",
+        r"\bpredict\b",
+        r"\bforecast\b",
+        r"\btrend\b",
+        r"\bexpect\b",
+        r"\banticipate\b",
     ],
     ResearchIntent.EVALUATION: [
-        r"\b(good|bad)\b", r"\b(risk|benefit|advantage|disadvantage)\b",
-        r"\b(safe|dangerous|harmful|helpful)\b", r"\bshould\b",
-        r"\b(worth|value)\b", r"\bevaluate\b", r"\bassess\b",
+        r"\b(good|bad)\b",
+        r"\b(risk|benefit|advantage|disadvantage)\b",
+        r"\b(safe|dangerous|harmful|helpful)\b",
+        r"\bshould\b",
+        r"\b(worth|value)\b",
+        r"\bevaluate\b",
+        r"\bassess\b",
     ],
 }
 
@@ -300,8 +453,20 @@ def _extract_sentiment_targets(text: str) -> list[str]:
     targets = []
 
     sentiment_words = [
-        "risk", "benefit", "advantage", "disadvantage", "danger", "safety",
-        "threat", "opportunity", "harm", "help", "good", "bad", "positive", "negative"
+        "risk",
+        "benefit",
+        "advantage",
+        "disadvantage",
+        "danger",
+        "safety",
+        "threat",
+        "opportunity",
+        "harm",
+        "help",
+        "good",
+        "bad",
+        "positive",
+        "negative",
     ]
 
     for word in sentiment_words:
@@ -326,10 +491,19 @@ def _map_to_domains(
     has_ai = "artificial_intelligence" in primary or "artificial_intelligence" in secondary
     has_security = "cybersecurity" in primary or "cybersecurity" in secondary
     has_risk = any(t in sentiment_targets for t in ["risk", "danger", "threat", "harm"])
-    has_benefit = any(t in sentiment_targets for t in ["benefit", "advantage", "opportunity", "help"])
+    has_benefit = any(
+        t in sentiment_targets for t in ["benefit", "advantage", "opportunity", "help"]
+    )
 
     # Check for ML performance keywords
-    performance_keywords = ["accuracy", "performance", "learning", "training", "benchmark", "model"]
+    performance_keywords = [
+        "accuracy",
+        "performance",
+        "learning",
+        "training",
+        "benchmark",
+        "model",
+    ]
     has_performance = any(kw in keywords for kw in performance_keywords)
 
     if has_ai:
@@ -364,9 +538,7 @@ def _map_to_domains(
         domains.append("technology_adoption")
 
     # Default fallback - if we have AI but no domains, add capabilities and performance
-    if not domains and has_ai:
-        domains = ["ai_capabilities", "ml_performance"]
-    elif not domains:
+    if (not domains and has_ai) or not domains:
         domains = ["ai_capabilities", "ml_performance"]
 
     return domains
@@ -394,12 +566,14 @@ def generate_questions(extraction: TopicExtraction, max_questions: int = 5) -> l
                 context="enterprise settings",
             )
 
-            questions.append({
-                "domain": domain.name,
-                "text": question_text,
-                "template_source": domain_name,
-                "relevance_score": 0.85,
-            })
+            questions.append(
+                {
+                    "domain": domain.name,
+                    "text": question_text,
+                    "template_source": domain_name,
+                    "relevance_score": 0.85,
+                }
+            )
 
             if len(questions) >= max_questions:
                 break
@@ -420,7 +594,10 @@ def generate_hypotheses(
     topic_label = " ".join(extraction.keywords[:3]) if extraction.keywords else "this technology"
 
     # Generate based on intent
-    if extraction.intent == ResearchIntent.COMPARISON or extraction.intent == ResearchIntent.EVALUATION:
+    if (
+        extraction.intent == ResearchIntent.COMPARISON
+        or extraction.intent == ResearchIntent.EVALUATION
+    ):
         # Both positive and negative hypotheses
         for domain_name in extraction.domain_hints[:3]:
             domain = RESEARCH_DOMAINS.get(domain_name)
@@ -435,12 +612,14 @@ def generate_hypotheses(
                     attack_type="prompt injection" if "security" in domain_name else "misuse",
                 )
 
-                hypotheses.append({
-                    "statement": hypothesis_text,
-                    "domain": domain.name,
-                    "testable": True,
-                    "prior_probability": 0.5,
-                })
+                hypotheses.append(
+                    {
+                        "statement": hypothesis_text,
+                        "domain": domain.name,
+                        "testable": True,
+                        "prior_probability": 0.5,
+                    }
+                )
 
                 if len(hypotheses) >= max_hypotheses:
                     break
@@ -450,12 +629,14 @@ def generate_hypotheses(
 
     # Add null hypothesis
     if len(hypotheses) < max_hypotheses:
-        hypotheses.append({
-            "statement": f"There is no significant difference in outcomes with vs without {topic_label}",
-            "domain": "null_hypothesis",
-            "testable": True,
-            "prior_probability": 0.3,
-        })
+        hypotheses.append(
+            {
+                "statement": f"There is no significant difference in outcomes with vs without {topic_label}",
+                "domain": "null_hypothesis",
+                "testable": True,
+                "prior_probability": 0.3,
+            }
+        )
 
     return hypotheses
 
@@ -473,10 +654,12 @@ def get_relevant_data_sources(extraction: TopicExtraction) -> list[dict]:
         for source in domain.data_sources:
             if source not in seen:
                 seen.add(source)
-                sources.append({
-                    "source_id": source,
-                    "domain": domain.name,
-                    "relevance": "high",
-                })
+                sources.append(
+                    {
+                        "source_id": source,
+                        "domain": domain.name,
+                        "relevance": "high",
+                    }
+                )
 
     return sources

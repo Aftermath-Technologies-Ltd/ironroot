@@ -109,7 +109,9 @@ class WorldModel(ABC):
         pass
 
     @abstractmethod
-    def predict_next_state(self, current_state: dict[str, Any], action: dict[str, Any]) -> dict[str, Any]:
+    def predict_next_state(
+        self, current_state: dict[str, Any], action: dict[str, Any]
+    ) -> dict[str, Any]:
         """predicts next state given current state and action."""
         pass
 
@@ -159,7 +161,9 @@ class SimpleCausalModel(WorldModel):
     def model_type(self) -> WorldModelType:
         return WorldModelType.CAUSAL
 
-    def predict_next_state(self, current_state: dict[str, Any], action: dict[str, Any]) -> dict[str, Any]:
+    def predict_next_state(
+        self, current_state: dict[str, Any], action: dict[str, Any]
+    ) -> dict[str, Any]:
         """predicts next state using causal model."""
         state = current_state.copy()
 

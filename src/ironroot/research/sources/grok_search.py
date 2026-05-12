@@ -2,8 +2,8 @@
 """Grok-powered web search for real-time research data."""
 
 import hashlib
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 from ironroot.llm.grok import GrokClient
 
@@ -11,6 +11,7 @@ from ironroot.llm.grok import GrokClient
 @dataclass
 class WebSearchResult:
     """Result from Grok web search."""
+
     content: str
     citations: list[dict]
     query: str
@@ -103,7 +104,7 @@ class GrokSearchSource:
             citations=citations,
             query=query,
             data_hash=data_hash,
-            retrieved_at=datetime.now(timezone.utc).isoformat(),
+            retrieved_at=datetime.now(UTC).isoformat(),
             token_usage=response.usage,
         )
 
@@ -160,8 +161,7 @@ class GrokSearchSource:
         )
 
         citations = [
-            {"url": c.url, "title": c.title, "snippet": c.snippet}
-            for c in response.citations
+            {"url": c.url, "title": c.title, "snippet": c.snippet} for c in response.citations
         ]
 
         data_hash = hashlib.sha256(response.content.encode()).hexdigest()[:16]
@@ -171,7 +171,7 @@ class GrokSearchSource:
             citations=citations,
             query=question,
             data_hash=data_hash,
-            retrieved_at=datetime.now(timezone.utc).isoformat(),
+            retrieved_at=datetime.now(UTC).isoformat(),
             token_usage=response.usage,
         )
 

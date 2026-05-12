@@ -12,17 +12,11 @@ Gate passes if:
 - Compositional tasks succeed above threshold
 """
 
-import asyncio
-import hashlib
 import json
 import random
-import statistics
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
-
-from scipy import stats as scipy_stats
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +26,7 @@ from ironroot.storage.artifact_service import get_artifact_service
 
 class TransferRegime(str, Enum):
     """Transfer learning regimes."""
+
     ZERO_SHOT = "zero_shot"
     FEW_SHOT = "few_shot"
     COMPOSITIONAL = "compositional"
@@ -40,6 +35,7 @@ class TransferRegime(str, Enum):
 @dataclass
 class TransferResult:
     """Result of a transfer evaluation."""
+
     source_id: str
     regime: TransferRegime
     baseline_score: float
@@ -55,6 +51,7 @@ class TransferResult:
 @dataclass
 class TransferReport:
     """Complete transfer evaluation report."""
+
     report_id: str
     regime: TransferRegime
     training_sources: list[str]
@@ -72,6 +69,7 @@ class TransferReport:
 @dataclass
 class Skill:
     """A transferable skill with preconditions and effects."""
+
     skill_id: str
     name: str
     domain: str
@@ -135,23 +133,25 @@ class TransferGate:
 
             # Confidence interval from evaluation sample
             n = 100 + self.rng.randint(0, 100)  # Adequate sample size
-            se = 0.08 / (n ** 0.5)
+            se = 0.08 / (n**0.5)
             ci_low = transfer_score - 1.96 * se
             ci_high = transfer_score + 1.96 * se
 
             # Pass if transfer beats naive baseline AND CI lower bound > naive
             beats_baseline = transfer_score > naive_baseline and ci_low > naive_baseline * 0.9
 
-            results.append(TransferResult(
-                source_id=source_id,
-                regime=TransferRegime.ZERO_SHOT,
-                baseline_score=naive_baseline,
-                transfer_score=round(transfer_score, 4),
-                transfer_gain=round(transfer_score - naive_baseline, 4),
-                confidence_interval_95=(round(ci_low, 4), round(ci_high, 4)),
-                sample_size=n,
-                beats_baseline=beats_baseline,
-            ))
+            results.append(
+                TransferResult(
+                    source_id=source_id,
+                    regime=TransferRegime.ZERO_SHOT,
+                    baseline_score=naive_baseline,
+                    transfer_score=round(transfer_score, 4),
+                    transfer_gain=round(transfer_score - naive_baseline, 4),
+                    confidence_interval_95=(round(ci_low, 4), round(ci_high, 4)),
+                    sample_size=n,
+                    beats_baseline=beats_baseline,
+                )
+            )
 
         sources_passing = sum(1 for r in results if r.beats_baseline)
         gate_passed = sources_passing >= self.ZERO_SHOT_SOURCES_TO_PASS
@@ -168,7 +168,7 @@ class TransferGate:
             gate_passed=gate_passed,
             regression_detected=False,
             baseline_regression_report={},
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
         # Store artifact
@@ -199,23 +199,25 @@ class TransferGate:
             transfer_score = min(transfer_score, baseline * 1.05)  # Cap at baseline
 
             n = 50 + self.rng.randint(0, 50)
-            se = 0.08 / (n ** 0.5)
+            se = 0.08 / (n**0.5)
             ci_low = transfer_score - 1.96 * se
             ci_high = transfer_score + 1.96 * se
 
             beats_baseline = transfer_score > baseline * 0.5
 
-            results.append(TransferResult(
-                source_id=source_id,
-                regime=TransferRegime.FEW_SHOT,
-                baseline_score=baseline,
-                transfer_score=round(transfer_score, 4),
-                transfer_gain=round(transfer_score - baseline, 4),
-                confidence_interval_95=(round(ci_low, 4), round(ci_high, 4)),
-                sample_size=n,
-                beats_baseline=beats_baseline,
-                adaptation_budget_used=round(budget_used, 4),
-            ))
+            results.append(
+                TransferResult(
+                    source_id=source_id,
+                    regime=TransferRegime.FEW_SHOT,
+                    baseline_score=baseline,
+                    transfer_score=round(transfer_score, 4),
+                    transfer_gain=round(transfer_score - baseline, 4),
+                    confidence_interval_95=(round(ci_low, 4), round(ci_high, 4)),
+                    sample_size=n,
+                    beats_baseline=beats_baseline,
+                    adaptation_budget_used=round(budget_used, 4),
+                )
+            )
 
         # Check for regressions on training sources
         for source_id in training_sources:
@@ -246,7 +248,7 @@ class TransferGate:
             gate_passed=gate_passed,
             regression_detected=regression_detected,
             baseline_regression_report=baseline_regression,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
         await self._store_report(session, report, run_id)
@@ -281,24 +283,26 @@ class TransferGate:
             transfer_score = baseline * skill_factor * (0.90 + self.rng.uniform(0.0, 0.15))
 
             n = 50 + self.rng.randint(0, 50)
-            se = 0.10 / (n ** 0.5)
+            se = 0.10 / (n**0.5)
             ci_low = transfer_score - 1.96 * se
             ci_high = transfer_score + 1.96 * se
 
             # Pass if above compositional threshold (0.6)
             beats_threshold = transfer_score >= self.COMPOSITIONAL_THRESHOLD
 
-            results.append(TransferResult(
-                source_id=source_id,
-                regime=TransferRegime.COMPOSITIONAL,
-                baseline_score=baseline,
-                transfer_score=round(transfer_score, 4),
-                transfer_gain=round(transfer_score - baseline, 4),
-                confidence_interval_95=(round(ci_low, 4), round(ci_high, 4)),
-                sample_size=n,
-                beats_baseline=beats_threshold,
-                skills_composed=skill_names,
-            ))
+            results.append(
+                TransferResult(
+                    source_id=source_id,
+                    regime=TransferRegime.COMPOSITIONAL,
+                    baseline_score=baseline,
+                    transfer_score=round(transfer_score, 4),
+                    transfer_gain=round(transfer_score - baseline, 4),
+                    confidence_interval_95=(round(ci_low, 4), round(ci_high, 4)),
+                    sample_size=n,
+                    beats_baseline=beats_threshold,
+                    skills_composed=skill_names,
+                )
+            )
 
         sources_passing = sum(1 for r in results if r.beats_baseline)
         # Gate requires at least 3/4 sources (75%)
@@ -316,7 +320,7 @@ class TransferGate:
             gate_passed=gate_passed,
             regression_detected=False,
             baseline_regression_report={},
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
         await self._store_report(session, report, run_id)

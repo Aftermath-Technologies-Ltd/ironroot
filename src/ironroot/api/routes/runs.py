@@ -253,8 +253,8 @@ async def execute_gates(
     service = get_gate_service()
     try:
         gate = await service.execute_gates(session, run_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return {
         "run_id": run_id,

@@ -16,44 +16,40 @@ Two tracks:
 import asyncio
 import hashlib
 import json
-import subprocess
 import random
 import statistics
-import time
-from dataclasses import dataclass, field
+import subprocess
+from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ironroot.battery import get_gi_battery
+from ironroot.beliefs.belief_service import get_belief_service
+from ironroot.capabilities import CapabilityStatus, get_capability_registry
 from ironroot.domain.ids import generate_id
-from ironroot.storage.postgres import get_session_factory
-from ironroot.storage.artifact_service import get_artifact_service
-from ironroot.storage.models import RunRecord
+from ironroot.evolution import (
+    PromotionCandidate,
+    get_strategy_evolution_gate,
+)
+from ironroot.healing.restoration import (
+    InvariantType,
+    get_self_healing_restorer,
+)
 from ironroot.orchestration.supervisor import RunPhase
-from ironroot.beliefs.belief_service import get_belief_service, MetricClass
+from ironroot.reality.sources.simulator import HiddenParamSimulator
 
 # Layer imports
 from ironroot.reality.sources.tabular import TabularDatasetSource
-from ironroot.reality.sources.simulator import HiddenParamSimulator
 from ironroot.reality.sources.time_series import TimeSeriesSource
-from ironroot.reality.multi_domain import get_multi_domain_executor
+from ironroot.storage.artifact_service import get_artifact_service
+from ironroot.storage.models import RunRecord
+from ironroot.storage.postgres import get_session_factory
 from ironroot.world_models import (
-    get_world_model_registry,
-    SimpleCausalModel,
     CounterfactualQuery,
+    SimpleCausalModel,
+    get_world_model_registry,
 )
-from ironroot.capabilities import get_capability_registry, CapabilityStatus
-from ironroot.evolution import (
-    get_strategy_evolution_gate,
-    PromotionCandidate,
-    PromotionDecision,
-)
-from ironroot.healing.restoration import (
-    get_self_healing_restorer,
-    InvariantType,
-)
-from ironroot.battery import get_gi_battery
 
 
 @dataclass
@@ -124,9 +120,11 @@ class FullCampaignTest:
 
         # get git commit
         try:
-            git_commit = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], cwd="/home/brad/ironroot"
-            ).decode().strip()[:12]
+            git_commit = (
+                subprocess.check_output(["git", "rev-parse", "HEAD"], cwd="/home/brad/ironroot")
+                .decode()
+                .strip()[:12]
+            )
         except Exception:
             git_commit = "unknown"
 
@@ -163,7 +161,8 @@ class FullCampaignTest:
 
         # count outcomes
         caps_passed = sum(
-            1 for c in self.CAPABILITIES_TO_TEST
+            1
+            for c in self.CAPABILITIES_TO_TEST
             if self.capability_registry.get_record(c).status == CapabilityStatus.PASSED
         )
 
@@ -181,12 +180,16 @@ class FullCampaignTest:
             hypotheses=hypotheses,
             capabilities_tested=len(self.CAPABILITIES_TO_TEST),
             capabilities_passed=caps_passed,
-            promotions_attempted=track1.get("promotions_attempted", 0) + track2.get("promotions_attempted", 0),
-            promotions_accepted=track1.get("promotions_accepted", 0) + track2.get("promotions_accepted", 0),
-            promotions_rejected=track1.get("promotions_rejected", 0) + track2.get("promotions_rejected", 0),
+            promotions_attempted=track1.get("promotions_attempted", 0)
+            + track2.get("promotions_attempted", 0),
+            promotions_accepted=track1.get("promotions_accepted", 0)
+            + track2.get("promotions_accepted", 0),
+            promotions_rejected=track1.get("promotions_rejected", 0)
+            + track2.get("promotions_rejected", 0),
             faults_injected=track2.get("faults_injected", 0),
             faults_healed=track2.get("faults_healed", 0),
-            all_gates_pass=track1.get("all_gates_pass", False) and track2.get("all_gates_pass", False),
+            all_gates_pass=track1.get("all_gates_pass", False)
+            and track2.get("all_gates_pass", False),
         )
 
     async def _create_campaign_manifest(self, session: AsyncSession, git_commit: str) -> None:
@@ -210,12 +213,14 @@ class FullCampaignTest:
         # add reality sources
         for source_name, source_type, source_class, kwargs in self.REALITY_SOURCES:
             source = source_class(seed=self.seed, **kwargs)
-            manifest["reality_sources"].append({
-                "source_id": source.source_id,
-                "source_type": source_type,
-                "provenance_hash": hashlib.sha256(source.source_id.encode()).hexdigest(),
-                "lock_proof_artifact_id": f"lock_proof_{source.source_id}",
-            })
+            manifest["reality_sources"].append(
+                {
+                    "source_id": source.source_id,
+                    "source_type": source_type,
+                    "provenance_hash": hashlib.sha256(source.source_id.encode()).hexdigest(),
+                    "lock_proof_artifact_id": f"lock_proof_{source.source_id}",
+                }
+            )
 
         artifact = await self.artifact_service.store_artifact(
             session=session,
@@ -369,16 +374,18 @@ class FullCampaignTest:
 
             penalty = 0.0 if in_range else 1.0
 
-            predictions.append({
-                "prediction_id": pred_id,
-                "metric_name": obs.metric_name,
-                "predicted_lower": round(lower, 4) if is_numeric else None,
-                "predicted_upper": round(upper, 4) if is_numeric else None,
-                "observation": round(obs.value, 4) if is_numeric else obs.value,
-                "contradicted": not in_range,
-                "penalty_applied": penalty,
-                "confidence_calibration": 0.8 if in_range else 0.2,
-            })
+            predictions.append(
+                {
+                    "prediction_id": pred_id,
+                    "metric_name": obs.metric_name,
+                    "predicted_lower": round(lower, 4) if is_numeric else None,
+                    "predicted_upper": round(upper, 4) if is_numeric else None,
+                    "observation": round(obs.value, 4) if is_numeric else obs.value,
+                    "contradicted": not in_range,
+                    "penalty_applied": penalty,
+                    "confidence_calibration": 0.8 if in_range else 0.2,
+                }
+            )
 
             self.predictions_made += 1
             self.beliefs_written += 1
@@ -425,7 +432,9 @@ class FullCampaignTest:
         correct = 0
         for i in range(5):
             intervention_value = 1.0 + i * 0.5
-            expected = intervention_value * model._coefficients["a_to_b"] * model._coefficients["b_to_c"]
+            expected = (
+                intervention_value * model._coefficients["a_to_b"] * model._coefficients["b_to_c"]
+            )
 
             query = CounterfactualQuery(
                 query_id=generate_id("qry"),
@@ -438,13 +447,15 @@ class FullCampaignTest:
             actual = model.query_counterfactual(query)
             is_correct = abs(actual - expected) < 0.1
 
-            queries.append({
-                "query_id": query.query_id,
-                "intervention": {"a": intervention_value},
-                "expected": round(expected, 4),
-                "observed": round(actual, 4),
-                "correct": is_correct,
-            })
+            queries.append(
+                {
+                    "query_id": query.query_id,
+                    "intervention": {"a": intervention_value},
+                    "expected": round(expected, 4),
+                    "observed": round(actual, 4),
+                    "correct": is_correct,
+                }
+            )
 
             if is_correct:
                 correct += 1
@@ -462,7 +473,9 @@ class FullCampaignTest:
             "counterfactual_accuracy": round(counterfactual_accuracy, 4),
             "intervention_success_rate": round(intervention_success_rate, 4),
             "causal_consistency_score": round(causal_consistency_score, 4),
-            "evaluation_protocol_hash": hashlib.sha256(b"counterfactual_linear_eval_v1").hexdigest()[:16],
+            "evaluation_protocol_hash": hashlib.sha256(
+                b"counterfactual_linear_eval_v1"
+            ).hexdigest()[:16],
             "counterfactual_test_suite": queries,
         }
 
@@ -476,7 +489,9 @@ class FullCampaignTest:
         )
         self.artifacts[f"world_model_report_{source.source_id}"] = artifact.id
 
-        print(f"  World model: accuracy={counterfactual_accuracy:.2f}, interventions={intervention_success_rate:.2f}")
+        print(
+            f"  World model: accuracy={counterfactual_accuracy:.2f}, interventions={intervention_success_rate:.2f}"
+        )
         return report
 
     async def _test_capability(
@@ -521,7 +536,9 @@ class FullCampaignTest:
             "passed": attempt.passed,
         }
 
-        print(f"  Capability {cap.name}: {metric_value:.2f} vs {cap.success_threshold} -> {'PASS' if attempt.passed else 'FAIL'}")
+        print(
+            f"  Capability {cap.name}: {metric_value:.2f} vs {cap.success_threshold} -> {'PASS' if attempt.passed else 'FAIL'}"
+        )
         return result
 
     async def _inject_and_heal(self, session: AsyncSession, run_id: str) -> dict:
@@ -572,7 +589,9 @@ class FullCampaignTest:
         print(f"  Healed: {report.final_status.value}, recurrence: {report.recurrence_rate:.2f}")
         return healing_result
 
-    async def _attempt_promotion(self, session: AsyncSession, attempt_num: int, is_fault_track: bool) -> dict:
+    async def _attempt_promotion(
+        self, session: AsyncSession, attempt_num: int, is_fault_track: bool
+    ) -> dict:
         """Attempt strategy promotion."""
         run_id = await self._create_run(session)
 
@@ -632,10 +651,14 @@ class FullCampaignTest:
         )
         self.artifacts[f"promotion_{attempt_num + 1}"] = artifact.id
 
-        print(f"  Promotion {attempt_num + 1}: effect={effect:.2f}, decision={result.decision.value}")
+        print(
+            f"  Promotion {attempt_num + 1}: effect={effect:.2f}, decision={result.decision.value}"
+        )
         return promo_result
 
-    async def _create_transfer_report(self, session: AsyncSession, track1: dict, track2: dict) -> dict:
+    async def _create_transfer_report(
+        self, session: AsyncSession, track1: dict, track2: dict
+    ) -> dict:
         """Create cross-domain transfer report."""
         run_id = await self._create_run(session)
 
@@ -677,7 +700,9 @@ class FullCampaignTest:
             "transfer_performance_by_domain": {k: round(v, 4) for k, v in transfer_perfs.items()},
             "transfer_gain": round(transfer_gain, 4),
             "cross_domain_survival_rate": round(survival_rate, 4),
-            "distribution_shift_failure_rate": round(total_contradictions / max(total_preds, 1), 4),
+            "distribution_shift_failure_rate": round(
+                total_contradictions / max(total_preds, 1), 4
+            ),
             "domains_tested": len(domains),
         }
 
@@ -693,7 +718,9 @@ class FullCampaignTest:
 
         return report
 
-    async def _create_belief_survival_report(self, session: AsyncSession, track1: dict, track2: dict) -> dict:
+    async def _create_belief_survival_report(
+        self, session: AsyncSession, track1: dict, track2: dict
+    ) -> dict:
         """Create belief survival summary."""
         run_id = await self._create_run(session)
 
@@ -783,8 +810,8 @@ def format_campaign_output(result: CampaignResult) -> str:
     lines.append("-" * 78)
     lines.append(f"campaign_id: {result.campaign_id}")
     lines.append(f"git_commit_hash: {result.git_commit}")
-    lines.append(f"strategy_baseline_id: strategy_baseline_v1")
-    lines.append(f"strategy_candidate_ids: [strategy_candidate_v2, strategy_candidate_v3]")
+    lines.append("strategy_baseline_id: strategy_baseline_v1")
+    lines.append("strategy_candidate_ids: [strategy_candidate_v2, strategy_candidate_v3]")
     lines.append(f"started_at: {result.started_at}")
     lines.append(f"completed_at: {result.completed_at}")
     lines.append("")
@@ -813,12 +840,22 @@ def format_campaign_output(result: CampaignResult) -> str:
     lines.append("-" * 78)
     for table in result.track1_results.get("prediction_tables", []):
         lines.append(f"Source: {table['source_id']}")
-        lines.append(f"  {'Prediction ID':<20} {'Predicted':<20} {'Observed':<12} {'Contra':<8} {'Penalty':<8}")
+        lines.append(
+            f"  {'Prediction ID':<20} {'Predicted':<20} {'Observed':<12} {'Contra':<8} {'Penalty':<8}"
+        )
         lines.append(f"  {'-'*20} {'-'*20} {'-'*12} {'-'*8} {'-'*8}")
         for p in table["predictions"][:4]:
-            pred_range = f"[{p['predicted_lower']}, {p['predicted_upper']}]" if p['predicted_lower'] else "N/A"
-            lines.append(f"  {p['prediction_id'][:18]:<20} {pred_range:<20} {str(p['observation'])[:10]:<12} {str(p['contradicted']):<8} {p['penalty_applied']:<8}")
-        lines.append(f"  TOTAL: {table['total_predictions']} predictions, {table['contradictions']} contradicted, {table['total_penalty']:.1f} penalty")
+            pred_range = (
+                f"[{p['predicted_lower']}, {p['predicted_upper']}]"
+                if p["predicted_lower"]
+                else "N/A"
+            )
+            lines.append(
+                f"  {p['prediction_id'][:18]:<20} {pred_range:<20} {str(p['observation'])[:10]:<12} {p['contradicted']!s:<8} {p['penalty_applied']:<8}"
+            )
+        lines.append(
+            f"  TOTAL: {table['total_predictions']} predictions, {table['contradictions']} contradicted, {table['total_penalty']:.1f} penalty"
+        )
         lines.append("")
 
     # 4) World Model Reports
@@ -831,9 +868,13 @@ def format_campaign_output(result: CampaignResult) -> str:
         lines.append(f"  counterfactual_accuracy: {wm['counterfactual_accuracy']}")
         lines.append(f"  intervention_success_rate: {wm['intervention_success_rate']}")
         lines.append(f"  causal_consistency_score: {wm['causal_consistency_score']}")
-        lines.append(f"  Counterfactual Test Suite ({len(wm['counterfactual_test_suite'])} queries):")
+        lines.append(
+            f"  Counterfactual Test Suite ({len(wm['counterfactual_test_suite'])} queries):"
+        )
         for q in wm["counterfactual_test_suite"][:3]:
-            lines.append(f"    do(a={q['intervention']['a']}) -> c: expected={q['expected']:.2f}, observed={q['observed']:.2f}, correct={q['correct']}")
+            lines.append(
+                f"    do(a={q['intervention']['a']}) -> c: expected={q['expected']:.2f}, observed={q['observed']:.2f}, correct={q['correct']}"
+            )
         lines.append("")
 
     # 5) Cross-Domain Transfer Report
@@ -842,10 +883,14 @@ def format_campaign_output(result: CampaignResult) -> str:
     lines.append("-" * 78)
     transfer = result.track1_results.get("transfer_performance_by_domain", {})
     # get from artifacts
-    lines.append(f"base_performance: (computed from first domain)")
-    lines.append(f"transfer_gain: (computed)")
-    lines.append(f"cross_domain_survival_rate: {1.0 - result.beliefs_contradicted / max(result.beliefs_written, 1):.4f}")
-    lines.append(f"distribution_shift_failure_rate: {result.beliefs_contradicted / max(result.beliefs_written, 1):.4f}")
+    lines.append("base_performance: (computed from first domain)")
+    lines.append("transfer_gain: (computed)")
+    lines.append(
+        f"cross_domain_survival_rate: {1.0 - result.beliefs_contradicted / max(result.beliefs_written, 1):.4f}"
+    )
+    lines.append(
+        f"distribution_shift_failure_rate: {result.beliefs_contradicted / max(result.beliefs_written, 1):.4f}"
+    )
     lines.append("")
 
     # 6) Strategy Evolution Ledger
@@ -862,7 +907,9 @@ def format_campaign_output(result: CampaignResult) -> str:
         lines.append(f"  decision: {promo['decision']}")
         lines.append(f"  reasoning: {promo['reasoning']}")
         lines.append("")
-    lines.append(f"SUMMARY: {result.promotions_attempted} attempted, {result.promotions_accepted} accepted, {result.promotions_rejected} rejected")
+    lines.append(
+        f"SUMMARY: {result.promotions_attempted} attempted, {result.promotions_accepted} accepted, {result.promotions_rejected} rejected"
+    )
     lines.append("")
 
     # 7) Self-Healing Reports (Track 2)
@@ -876,14 +923,18 @@ def format_campaign_output(result: CampaignResult) -> str:
         lines.append(f"  containment_time_ms: {heal['containment_time_ms']:.4f}")
         lines.append(f"  repair_attempts: {heal['repair_attempts']}")
         lines.append(f"  final_status: {heal['final_status']}")
-        lines.append(f"  time_to_invariant_restoration_ms: {heal['time_to_invariant_restoration_ms']:.4f}")
+        lines.append(
+            f"  time_to_invariant_restoration_ms: {heal['time_to_invariant_restoration_ms']:.4f}"
+        )
         lines.append(f"  recurrence_rate_over_10_runs: {heal['recurrence_rate_over_10_runs']:.2f}")
         lines.append(f"  regression_tests_added: {heal['regression_tests_added']}")
-        lines.append(f"  Gates After Healing:")
+        lines.append("  Gates After Healing:")
         for gate, status in heal["gates"].items():
             lines.append(f"    {gate}: {status}")
         lines.append("")
-    lines.append(f"SUMMARY: {result.faults_injected} faults injected, {result.faults_healed} healed")
+    lines.append(
+        f"SUMMARY: {result.faults_injected} faults injected, {result.faults_healed} healed"
+    )
     lines.append("")
 
     # 8) Belief Survival Summary
@@ -914,12 +965,16 @@ def format_campaign_output(result: CampaignResult) -> str:
     lines.append("-" * 78)
     lines.append(f"capabilities_tested: {result.capabilities_tested}")
     lines.append(f"capabilities_passed: {result.capabilities_passed}")
-    lines.append(f"pass_rate: {result.capabilities_passed / max(result.capabilities_tested, 1):.2%}")
+    lines.append(
+        f"pass_rate: {result.capabilities_passed / max(result.capabilities_tested, 1):.2%}"
+    )
     lines.append("")
     lines.append("Capabilities Tested:")
     for cap in result.track1_results.get("capability_results", [])[:7]:
         status = "PASS" if cap.get("passed") else "FAIL"
-        lines.append(f"  {cap['capability_name']}: {cap['metric_value']:.2f} vs {cap['threshold']} -> {status}")
+        lines.append(
+            f"  {cap['capability_name']}: {cap['metric_value']:.2f} vs {cap['threshold']} -> {status}"
+        )
     lines.append("")
 
     # Final Summary
@@ -931,7 +986,9 @@ def format_campaign_output(result: CampaignResult) -> str:
     lines.append(f"beliefs_written: {result.beliefs_written}")
     lines.append(f"beliefs_survived: {result.beliefs_survived}")
     lines.append(f"capabilities_passed: {result.capabilities_passed}/{result.capabilities_tested}")
-    lines.append(f"promotions: {result.promotions_accepted} accepted, {result.promotions_rejected} rejected")
+    lines.append(
+        f"promotions: {result.promotions_accepted} accepted, {result.promotions_rejected} rejected"
+    )
     lines.append(f"faults_healed: {result.faults_healed}/{result.faults_injected}")
     lines.append(f"hypotheses: {len(result.hypotheses)}")
     lines.append("")

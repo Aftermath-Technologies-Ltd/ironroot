@@ -2,19 +2,19 @@
 """belief domain module."""
 
 from ironroot.beliefs.belief_service import (
+    PRIMARY_METRIC_NAMES,
+    VERIFIER_ARTIFACT_TYPES,
     BeliefService,
     BeliefType,
     MetricClass,
-    PRIMARY_METRIC_NAMES,
-    VERIFIER_ARTIFACT_TYPES,
     get_belief_service,
 )
 
 __all__ = [
+    "PRIMARY_METRIC_NAMES",
+    "VERIFIER_ARTIFACT_TYPES",
     "BeliefService",
     "BeliefType",
     "MetricClass",
-    "PRIMARY_METRIC_NAMES",
-    "VERIFIER_ARTIFACT_TYPES",
     "get_belief_service",
 ]

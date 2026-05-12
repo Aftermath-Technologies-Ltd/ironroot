@@ -4,8 +4,8 @@
 import hashlib
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import httpx
 
@@ -13,6 +13,7 @@ import httpx
 @dataclass
 class ArxivPaper:
     """A paper from arXiv."""
+
     arxiv_id: str
     title: str
     abstract: str
@@ -28,6 +29,7 @@ class ArxivPaper:
 @dataclass
 class ArxivSearchResult:
     """Search results from arXiv."""
+
     papers: list[ArxivPaper]
     total: int
     query: str
@@ -88,8 +90,10 @@ class ArxivSource:
 
         # Get total from feed
         root = ET.fromstring(response.text)
-        total_elem = root.find(f"{self.ATOM_NS}totalResults",
-                               namespaces={"opensearch": "http://a9.com/-/spec/opensearch/1.1/"})
+        total_elem = root.find(
+            f"{self.ATOM_NS}totalResults",
+            namespaces={"opensearch": "http://a9.com/-/spec/opensearch/1.1/"},
+        )
         total = int(total_elem.text) if total_elem is not None else len(papers)
 
         data_hash = hashlib.sha256(response.text.encode()).hexdigest()[:16]
@@ -99,7 +103,7 @@ class ArxivSource:
             total=total,
             query=query,
             data_hash=data_hash,
-            retrieved_at=datetime.now(timezone.utc).isoformat(),
+            retrieved_at=datetime.now(UTC).isoformat(),
         )
 
     def _parse_response(self, xml_text: str) -> list[ArxivPaper]:
@@ -115,11 +119,19 @@ class ArxivSource:
 
             # Title (clean whitespace)
             title_elem = entry.find(f"{self.ATOM_NS}title")
-            title = " ".join(title_elem.text.split()) if title_elem is not None and title_elem.text else ""
+            title = (
+                " ".join(title_elem.text.split())
+                if title_elem is not None and title_elem.text
+                else ""
+            )
 
             # Abstract (clean whitespace)
             summary_elem = entry.find(f"{self.ATOM_NS}summary")
-            abstract = " ".join(summary_elem.text.split()) if summary_elem is not None and summary_elem.text else ""
+            abstract = (
+                " ".join(summary_elem.text.split())
+                if summary_elem is not None and summary_elem.text
+                else ""
+            )
 
             # Authors
             authors = []
@@ -155,18 +167,20 @@ class ArxivSource:
                 if link.get("type") == "application/pdf":
                     pdf_url = link.get("href", "")
 
-            papers.append(ArxivPaper(
-                arxiv_id=arxiv_id,
-                title=title,
-                abstract=abstract,
-                authors=authors,
-                published=published,
-                updated=updated,
-                categories=categories,
-                pdf_url=pdf_url,
-                abs_url=abs_url,
-                primary_category=primary_category,
-            ))
+            papers.append(
+                ArxivPaper(
+                    arxiv_id=arxiv_id,
+                    title=title,
+                    abstract=abstract,
+                    authors=authors,
+                    published=published,
+                    updated=updated,
+                    categories=categories,
+                    pdf_url=pdf_url,
+                    abs_url=abs_url,
+                    primary_category=primary_category,
+                )
+            )
 
         return papers
 

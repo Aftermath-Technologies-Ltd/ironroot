@@ -7,12 +7,11 @@ One model will not generalize. You need:
 - Explicit model selection beliefs
 """
 
-import hashlib
 import json
 import random
 import statistics
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -24,6 +23,7 @@ from ironroot.storage.artifact_service import get_artifact_service
 
 class ModelFamily(str, Enum):
     """World model families."""
+
     LINEAR = "linear"
     TREE = "tree"
     NEURAL = "neural"
@@ -34,6 +34,7 @@ class ModelFamily(str, Enum):
 @dataclass
 class ModelPrediction:
     """A prediction from a single model."""
+
     model_id: str
     family: ModelFamily
     prediction: Any
@@ -44,6 +45,7 @@ class ModelPrediction:
 @dataclass
 class EnsemblePrediction:
     """Aggregated prediction from the ensemble."""
+
     prediction_id: str
     query: dict
     member_predictions: list[ModelPrediction]
@@ -58,6 +60,7 @@ class EnsemblePrediction:
 @dataclass
 class ModelCalibration:
     """Calibration metrics for a model."""
+
     model_id: str
     family: ModelFamily
     predictions_made: int
@@ -70,6 +73,7 @@ class ModelCalibration:
 @dataclass
 class ModelSelectionBelief:
     """Belief about when to use which model."""
+
     belief_id: str
     domain: str
     preferred_family: ModelFamily
@@ -153,13 +157,14 @@ class WorldModelMember:
         # Calculate calibration error
         if self._calibration_history:
             avg_confidence = statistics.mean(c for c, _ in self._calibration_history)
-            avg_correct = statistics.mean(1 if correct else 0 for _, correct in self._calibration_history)
+            avg_correct = statistics.mean(
+                1 if correct else 0 for _, correct in self._calibration_history
+            )
             calibration_error = abs(avg_confidence - avg_correct)
 
             # Brier score
             brier = statistics.mean(
-                (c - (1 if correct else 0)) ** 2
-                for c, correct in self._calibration_history
+                (c - (1 if correct else 0)) ** 2 for c, correct in self._calibration_history
             )
         else:
             calibration_error = 0.0
@@ -229,7 +234,7 @@ class WorldModelEnsemble:
             final_prediction=final_pred.prediction,
             final_confidence=final_pred.confidence,
             disagreement_level=round(disagreement, 4),
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
         self.predictions.append(ensemble_pred)
@@ -286,7 +291,7 @@ class WorldModelEnsemble:
             preferred_family=preferred_family,
             confidence=0.7 + self.rng.uniform(0, 0.2),
             evidence=evidence,
-            created_at=datetime.now(timezone.utc).isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
         self.selection_beliefs.append(belief)

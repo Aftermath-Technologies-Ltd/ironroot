@@ -9,14 +9,14 @@ Layer 5: Self-healing Restoration
 + General Intelligence Battery
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import Any
 
 from ironroot.api.deps import get_db_session
 from ironroot.domain.ids import generate_id
-
 
 router = APIRouter(prefix="/agi", tags=["agi"])
 
@@ -25,12 +25,13 @@ router = APIRouter(prefix="/agi", tags=["agi"])
 # LAYER 1: Multi-domain RIL++
 # ============================================================================
 
+
 class CrossDomainRequest(BaseModel):
     """request for cross-domain testing."""
 
     seed: int = 42
     domains: list[str] = Field(default_factory=lambda: ["tabular_wine", "timeseries_walk"])
-    predictions_by_domain: dict[str, list[dict]] = Field(default_factory=dict)
+    predictions_by_domain: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
 
 
 class CrossDomainResponse(BaseModel):
@@ -42,7 +43,7 @@ class CrossDomainResponse(BaseModel):
     cross_domain_survival_rate: float
     distribution_shift_failure_rate: float
     calibration_error: float
-    domain_results: list[dict]
+    domain_results: list[dict[str, Any]]
 
 
 @router.post("/cross-domain", response_model=CrossDomainResponse)
@@ -51,9 +52,9 @@ async def run_cross_domain_test(
     session: AsyncSession = Depends(get_db_session),
 ) -> CrossDomainResponse:
     """Run prediction tests across multiple reality domains."""
+    from ironroot.orchestration.supervisor import RunPhase
     from ironroot.reality.multi_domain import get_multi_domain_executor
     from ironroot.storage.models import RunRecord
-    from ironroot.orchestration.supervisor import RunPhase
 
     run_id = generate_id("run")
 
@@ -113,6 +114,7 @@ async def list_domains() -> dict[str, list[str]]:
 # LAYER 2: World Models
 # ============================================================================
 
+
 class WorldModelRequest(BaseModel):
     """request to create a world model."""
 
@@ -144,9 +146,9 @@ async def register_world_model(
     session: AsyncSession = Depends(get_db_session),
 ) -> WorldModelResponse:
     """Register a new world model."""
-    from ironroot.world_models import get_world_model_registry, SimpleCausalModel
-    from ironroot.storage.models import RunRecord
     from ironroot.orchestration.supervisor import RunPhase
+    from ironroot.storage.models import RunRecord
+    from ironroot.world_models import SimpleCausalModel, get_world_model_registry
 
     run_id = generate_id("run")
 
@@ -177,7 +179,7 @@ async def query_counterfactual(
     session: AsyncSession = Depends(get_db_session),
 ) -> dict[str, Any]:
     """Query a counterfactual from a world model."""
-    from ironroot.world_models import get_world_model_registry, CounterfactualQuery
+    from ironroot.world_models import CounterfactualQuery, get_world_model_registry
 
     registry = get_world_model_registry()
     model = registry.get_model(request.model_id)
@@ -185,9 +187,11 @@ async def query_counterfactual(
     if not model:
         raise HTTPException(status_code=404, detail=f"Model {request.model_id} not found")
 
+    intervention_key = next(iter(request.intervention.keys()))
+    intervention_value = next(iter(request.intervention.values()))
     query = CounterfactualQuery(
         query_id=generate_id("qry"),
-        condition=f"if {list(request.intervention.keys())[0]} were {list(request.intervention.values())[0]}",
+        condition=f"if {intervention_key} were {intervention_value}",
         intervention=request.intervention,
         outcome_variable=request.outcome_variable,
         expected_outcome=request.expected_outcome,
@@ -202,13 +206,16 @@ async def query_counterfactual(
         "outcome_variable": request.outcome_variable,
         "result": result,
         "expected": request.expected_outcome,
-        "correct": abs(result - request.expected_outcome) < 0.1 if request.expected_outcome else None,
+        "correct": (
+            abs(result - request.expected_outcome) < 0.1 if request.expected_outcome else None
+        ),
     }
 
 
 # ============================================================================
 # LAYER 3: Capability Registry
 # ============================================================================
+
 
 @router.get("/capabilities")
 async def list_capabilities() -> dict[str, Any]:
@@ -220,15 +227,17 @@ async def list_capabilities() -> dict[str, Any]:
 
     for cap in registry._definitions.values():
         record = registry.get_record(cap.capability_id)
-        capabilities.append({
-            "capability_id": cap.capability_id,
-            "name": cap.name,
-            "level": cap.level.value,
-            "status": record.status.value if record else "unknown",
-            "prerequisites": cap.prerequisites,
-            "success_threshold": cap.success_threshold,
-            "passed_in_domains": record.passed_in_domains if record else [],
-        })
+        capabilities.append(
+            {
+                "capability_id": cap.capability_id,
+                "name": cap.name,
+                "level": cap.level.value,
+                "status": record.status.value if record else "unknown",
+                "prerequisites": cap.prerequisites,
+                "success_threshold": cap.success_threshold,
+                "passed_in_domains": record.passed_in_domains if record else [],
+            }
+        )
 
     return {
         "capabilities": capabilities,
@@ -237,7 +246,7 @@ async def list_capabilities() -> dict[str, Any]:
 
 
 @router.get("/capabilities/available")
-async def get_available_capabilities() -> dict[str, list[dict]]:
+async def get_available_capabilities() -> dict[str, list[dict[str, Any]]]:
     """Get capabilities whose prerequisites are met."""
     from ironroot.capabilities import get_capability_registry
 
@@ -275,8 +284,8 @@ async def record_capability_attempt(
 ) -> dict[str, Any]:
     """Record an attempt at a capability."""
     from ironroot.capabilities import get_capability_registry
-    from ironroot.storage.models import RunRecord
     from ironroot.orchestration.supervisor import RunPhase
+    from ironroot.storage.models import RunRecord
 
     run_id = generate_id("run")
 
@@ -312,6 +321,7 @@ async def record_capability_attempt(
 # LAYER 4: Strategy Evolution
 # ============================================================================
 
+
 class PromotionRequest(BaseModel):
     """request to evaluate a strategy for promotion."""
 
@@ -333,9 +343,9 @@ async def evaluate_promotion(
     session: AsyncSession = Depends(get_db_session),
 ) -> dict[str, Any]:
     """Evaluate a strategy candidate for promotion."""
-    from ironroot.evolution import get_strategy_evolution_gate, PromotionCandidate
-    from ironroot.storage.models import RunRecord
+    from ironroot.evolution import PromotionCandidate, get_strategy_evolution_gate
     from ironroot.orchestration.supervisor import RunPhase
+    from ironroot.storage.models import RunRecord
 
     run_id = generate_id("run")
 
@@ -401,6 +411,7 @@ async def get_evolution_stats() -> dict[str, Any]:
 # LAYER 5: Self-healing Restoration
 # ============================================================================
 
+
 class ViolationRequest(BaseModel):
     """request to report an invariant violation."""
 
@@ -416,9 +427,9 @@ async def report_violation(
     session: AsyncSession = Depends(get_db_session),
 ) -> dict[str, Any]:
     """Report an invariant violation."""
-    from ironroot.healing.restoration import get_self_healing_restorer, InvariantType
-    from ironroot.storage.models import RunRecord
+    from ironroot.healing.restoration import InvariantType, get_self_healing_restorer
     from ironroot.orchestration.supervisor import RunPhase
+    from ironroot.storage.models import RunRecord
 
     run_id = generate_id("run")
 
@@ -430,8 +441,11 @@ async def report_violation(
 
     try:
         inv_type = InvariantType(request.invariant_type)
-    except ValueError:
-        raise HTTPException(status_code=400, detail=f"Invalid invariant type: {request.invariant_type}")
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid invariant type: {request.invariant_type}",
+        ) from exc
 
     violation = restorer.register_invariant_violation(
         invariant_type=inv_type,
@@ -458,8 +472,8 @@ async def restore_correctness(
 ) -> dict[str, Any]:
     """Attempt to restore correctness after a violation."""
     from ironroot.healing.restoration import get_self_healing_restorer
-    from ironroot.storage.models import RunRecord
     from ironroot.orchestration.supervisor import RunPhase
+    from ironroot.storage.models import RunRecord
 
     run_id = generate_id("run")
 
@@ -471,8 +485,8 @@ async def restore_correctness(
 
     try:
         report = await restorer.restore_correctness(session, violation_id, run_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     run.status = "completed"
     await session.commit()
@@ -501,6 +515,7 @@ async def get_healing_stats() -> dict[str, Any]:
 # GENERAL INTELLIGENCE BATTERY
 # ============================================================================
 
+
 class BatteryRequest(BaseModel):
     """request to run the GI battery."""
 
@@ -515,8 +530,8 @@ async def run_battery(
 ) -> dict[str, Any]:
     """Run the General Intelligence Battery against a strategy."""
     from ironroot.battery import get_gi_battery
-    from ironroot.storage.models import RunRecord
     from ironroot.orchestration.supervisor import RunPhase
+    from ironroot.storage.models import RunRecord
 
     run_id = generate_id("run")
 
@@ -527,7 +542,7 @@ async def run_battery(
     battery = get_gi_battery(request.seed)
 
     # simple predictor for demo - in practice this would invoke the strategy
-    def dummy_predictor(task):
+    def dummy_predictor(task: Any) -> Any:
         # return baseline predictions
         if "sequence" in task.input_data:
             seq = task.input_data["sequence"]

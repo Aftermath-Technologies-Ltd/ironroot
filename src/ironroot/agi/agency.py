@@ -12,14 +12,12 @@ Gate passes if:
 - Logs plan revisions with grounded reasons
 """
 
-import asyncio
 import hashlib
 import json
 import random
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +27,7 @@ from ironroot.storage.artifact_service import get_artifact_service
 
 class EnvironmentType(str, Enum):
     """Long-horizon environment types."""
+
     NAVIGATION = "navigation"
     RESOURCE_MANAGEMENT = "resource_management"
     REPAIR_TASK = "repair_task"
@@ -37,6 +36,7 @@ class EnvironmentType(str, Enum):
 @dataclass
 class Observation:
     """Partial observation from environment."""
+
     step: int
     visible_state: dict
     hidden_state_hash: str  # We don't reveal hidden state
@@ -46,6 +46,7 @@ class Observation:
 @dataclass
 class Action:
     """Action taken by agent."""
+
     step: int
     action_type: str
     parameters: dict
@@ -55,6 +56,7 @@ class Action:
 @dataclass
 class PlanRevision:
     """Record of plan being revised."""
+
     revision_id: str
     step: int
     previous_plan: list[str]
@@ -67,6 +69,7 @@ class PlanRevision:
 @dataclass
 class EpisodeTrace:
     """Complete trace of an episode."""
+
     episode_id: str
     environment: str
     seed: int
@@ -83,6 +86,7 @@ class EpisodeTrace:
 @dataclass
 class EnvironmentMetrics:
     """Metrics for one environment across episodes."""
+
     environment: str
     episodes_run: int
     success_rate: float
@@ -192,7 +196,7 @@ class LongHorizonEnvironment:
             hidden_state_hash=hashlib.sha256(
                 json.dumps(self._hidden_state, sort_keys=True).encode()
             ).hexdigest()[:16],
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
     def _apply_action(self, action: Action) -> float:
@@ -284,7 +288,7 @@ class NavigationEnvironment(LongHorizonEnvironment):
             hidden_state_hash=hashlib.sha256(
                 json.dumps(self._hidden_state, sort_keys=True).encode()
             ).hexdigest()[:16],
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
     def _apply_action(self, action: Action) -> float:
@@ -333,8 +337,8 @@ class NavigationEnvironment(LongHorizonEnvironment):
     def _is_done(self) -> bool:
         """Done if reached goal or max steps."""
         at_goal = (
-            self._hidden_state["agent_x"] == self._hidden_state["goal_x"] and
-            self._hidden_state["agent_y"] == self._hidden_state["goal_y"]
+            self._hidden_state["agent_x"] == self._hidden_state["goal_x"]
+            and self._hidden_state["agent_y"] == self._hidden_state["goal_y"]
         )
         return at_goal or self._current_step >= self.max_steps
 
@@ -352,8 +356,8 @@ class NavigationEnvironment(LongHorizonEnvironment):
     def _is_success(self) -> bool:
         """Success if reached goal."""
         return (
-            self._hidden_state["agent_x"] == self._hidden_state["goal_x"] and
-            self._hidden_state["agent_y"] == self._hidden_state["goal_y"]
+            self._hidden_state["agent_x"] == self._hidden_state["goal_x"]
+            and self._hidden_state["agent_y"] == self._hidden_state["goal_y"]
         )
 
 
@@ -400,7 +404,7 @@ class ResourceManagementEnvironment(LongHorizonEnvironment):
             hidden_state_hash=hashlib.sha256(
                 json.dumps(self._hidden_state, sort_keys=True).encode()
             ).hexdigest()[:16],
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
     def _apply_action(self, action: Action) -> float:
@@ -423,7 +427,9 @@ class ResourceManagementEnvironment(LongHorizonEnvironment):
 
         elif action_type == "sell":
             # Sell to meet demand
-            demand_idx = self._hidden_state["current_demand_idx"] % len(self._hidden_state["demand"])
+            demand_idx = self._hidden_state["current_demand_idx"] % len(
+                self._hidden_state["demand"]
+            )
             demand = self._hidden_state["demand"][demand_idx]
             sold = min(self._hidden_state["total_produced"], demand)
 
@@ -503,7 +509,8 @@ class RepairTaskEnvironment(LongHorizonEnvironment):
     def _get_observation(self) -> Observation:
         """Get partial system observation (only diagnosed components visible)."""
         visible_components = {
-            c: status for c, status in self._hidden_state["components"].items()
+            c: status
+            for c, status in self._hidden_state["components"].items()
             if c in self._hidden_state["diagnostics_run"]
         }
 
@@ -519,7 +526,7 @@ class RepairTaskEnvironment(LongHorizonEnvironment):
             hidden_state_hash=hashlib.sha256(
                 json.dumps(self._hidden_state, sort_keys=True).encode()
             ).hexdigest()[:16],
-            timestamp=datetime.now(timezone.utc).isoformat(),
+            timestamp=datetime.now(UTC).isoformat(),
         )
 
     def _apply_action(self, action: Action) -> float:

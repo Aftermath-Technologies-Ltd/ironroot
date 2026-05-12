@@ -8,13 +8,14 @@ In production, these would connect to real APIs and databases.
 import hashlib
 import random
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 
 @dataclass
 class DataSourceResult:
     """Result from querying a data source."""
+
     source_id: str
     source_name: str
     query: str
@@ -274,7 +275,7 @@ class TopicDataSources:
 
     def query(self, source_id: str, topic: str, context: str = "") -> DataSourceResult:
         """Query a data source for topic-relevant information."""
-        start = datetime.now(timezone.utc)
+        start = datetime.now(UTC)
 
         data, record_count = self._get_source_data(source_id, topic)
 
@@ -311,10 +312,18 @@ class TopicDataSources:
             }, len(incidents)
 
         elif source_id == "arxiv_security" or source_id == "arxiv_ai":
-            papers = [p for p in ARXIV_AI_PAPERS if any(
-                t in ["security", "adversarial", "attacks", "phishing"]
-                for t in p["topics"]
-            )] if "security" in source_id else ARXIV_AI_PAPERS
+            papers = (
+                [
+                    p
+                    for p in ARXIV_AI_PAPERS
+                    if any(
+                        t in ["security", "adversarial", "attacks", "phishing"]
+                        for t in p["topics"]
+                    )
+                ]
+                if "security" in source_id
+                else ARXIV_AI_PAPERS
+            )
             return {
                 "papers": papers,
                 "total_results": len(papers),

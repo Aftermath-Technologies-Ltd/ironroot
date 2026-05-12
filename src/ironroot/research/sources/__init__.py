@@ -7,8 +7,8 @@ Connects to actual APIs:
 - Grok Web Search: Real-time web data with citations
 """
 
-from ironroot.research.sources.semantic_scholar import SemanticScholarSource
 from ironroot.research.sources.arxiv import ArxivSource
 from ironroot.research.sources.grok_search import GrokSearchSource
+from ironroot.research.sources.semantic_scholar import SemanticScholarSource
 
-__all__ = ["SemanticScholarSource", "ArxivSource", "GrokSearchSource"]
+__all__ = ["ArxivSource", "GrokSearchSource", "SemanticScholarSource"]

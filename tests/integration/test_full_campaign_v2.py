@@ -21,47 +21,40 @@ import random
 import statistics
 import subprocess
 import time
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
 
 from scipy import stats as scipy_stats
-
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ironroot.beliefs.belief_service import get_belief_service
+from ironroot.capabilities import get_capability_registry
 from ironroot.domain.ids import generate_id
-from ironroot.storage.postgres import get_session_factory
-from ironroot.storage.artifact_service import get_artifact_service
-from ironroot.storage.models import RunRecord
+from ironroot.evolution import (
+    get_strategy_evolution_gate,
+)
+from ironroot.healing.restoration import (
+    InvariantType,
+    get_self_healing_restorer,
+)
 from ironroot.orchestration.supervisor import RunPhase
-from ironroot.beliefs.belief_service import get_belief_service, MetricClass
+from ironroot.reality.sources.simulator import HiddenParamSimulator
 
 # Layer imports
 from ironroot.reality.sources.tabular import TabularDatasetSource
-from ironroot.reality.sources.simulator import HiddenParamSimulator
-from ironroot.reality.sources.time_series import TimeSeriesSource
-from ironroot.reality.multi_domain import get_multi_domain_executor
+from ironroot.storage.artifact_service import get_artifact_service
+from ironroot.storage.models import RunRecord
+from ironroot.storage.postgres import get_session_factory
 from ironroot.world_models import (
-    get_world_model_registry,
     SimpleCausalModel,
-    CounterfactualQuery,
+    get_world_model_registry,
 )
-from ironroot.capabilities import get_capability_registry, CapabilityStatus
-from ironroot.evolution import (
-    get_strategy_evolution_gate,
-    PromotionCandidate,
-    PromotionDecision,
-)
-from ironroot.healing.restoration import (
-    get_self_healing_restorer,
-    InvariantType,
-)
-
 
 # ============================================================================
 # EXTERNAL SEED COMMITMENT (Fix for Layer 1)
 # ============================================================================
+
 
 @dataclass
 class SeedCommitment:
@@ -70,6 +63,7 @@ class SeedCommitment:
     The commitment hash is computed BEFORE the run and stored externally.
     This proves the synthetic data could not be influenced by agents.
     """
+
     seed: int
     parameters: dict
     commitment_hash: str
@@ -77,7 +71,9 @@ class SeedCommitment:
     commitment_authority: str  # e.g., "git_commit", "blockchain", "notary"
 
     @classmethod
-    def create(cls, seed: int, parameters: dict, authority: str = "git_commit") -> "SeedCommitment":
+    def create(
+        cls, seed: int, parameters: dict, authority: str = "git_commit"
+    ) -> "SeedCommitment":
         """Create a new seed commitment."""
         payload = json.dumps({"seed": seed, "parameters": parameters}, sort_keys=True)
         commitment_hash = hashlib.sha256(payload.encode()).hexdigest()
@@ -85,7 +81,7 @@ class SeedCommitment:
             seed=seed,
             parameters=parameters,
             commitment_hash=commitment_hash,
-            committed_at=datetime.now(timezone.utc).isoformat(),
+            committed_at=datetime.now(UTC).isoformat(),
             commitment_authority=authority,
         )
 
@@ -99,9 +95,11 @@ class SeedCommitment:
 # COUNTERFACTUAL TEST SUITE (Fix for Layer 2)
 # ============================================================================
 
+
 @dataclass
 class CounterfactualTestCase:
     """A single counterfactual test case."""
+
     query_id: str
     intervention: dict[str, float]
     expected_outcome: float
@@ -143,23 +141,29 @@ class RobustCounterfactualSuite:
             # Intervention values
             if is_ood:
                 # OOD: values outside training range [0, 5]
-                a_value = self.rng.uniform(-2, 0) if self.rng.random() < 0.5 else self.rng.uniform(5, 10)
+                a_value = (
+                    self.rng.uniform(-2, 0) if self.rng.random() < 0.5 else self.rng.uniform(5, 10)
+                )
             else:
                 # In-distribution
                 a_value = self.rng.uniform(0.5, 4.5)
 
             # Compute true outcome with noise
             noise = self.rng.gauss(0, noise_std)
-            true_outcome = a_value * true_coefficients["a_to_b"] * true_coefficients["b_to_c"] + noise
+            true_outcome = (
+                a_value * true_coefficients["a_to_b"] * true_coefficients["b_to_c"] + noise
+            )
 
-            cases.append(CounterfactualTestCase(
-                query_id=generate_id("cfq"),
-                intervention={"a": round(a_value, 4)},
-                expected_outcome=round(true_outcome, 4),
-                is_ood=is_ood,
-                noise_level=noise_std,
-                training_visible=False,  # All test cases are held out
-            ))
+            cases.append(
+                CounterfactualTestCase(
+                    query_id=generate_id("cfq"),
+                    intervention={"a": round(a_value, 4)},
+                    expected_outcome=round(true_outcome, 4),
+                    is_ood=is_ood,
+                    noise_level=noise_std,
+                    training_visible=False,  # All test cases are held out
+                )
+            )
 
         # Split into training (for model) and test (held out)
         split_idx = int(self.n_queries * 0.6)  # 60% for training context, 40% held out
@@ -184,9 +188,11 @@ class RobustCounterfactualSuite:
 # STATISTICAL UTILITIES (Fix for Layer 4)
 # ============================================================================
 
+
 @dataclass
 class StatisticalResult:
     """Proper statistical test result."""
+
     effect_size: float
     sample_size_treatment: int
     sample_size_control: int
@@ -247,7 +253,7 @@ def compute_welch_t_test(
         t_stat = (mean1 - mean2) / se_diff
 
         # Welch-Satterthwaite degrees of freedom
-        df_num = (se1**2 + se2**2)**2
+        df_num = (se1**2 + se2**2) ** 2
         df_denom = (se1**4 / (n1 - 1)) + (se2**4 / (n2 - 1))
         df = df_num / df_denom if df_denom > 0 else n1 + n2 - 2
 
@@ -280,8 +286,10 @@ def compute_welch_t_test(
 # FAULT INJECTION SUITE (Fix for Layer 5)
 # ============================================================================
 
+
 class FaultType(Enum):
     """All fault types to test."""
+
     HASH_CHAIN = "hash_chain"
     ARTIFACT_TAMPER = "artifact_tamper"
     MISSING_ARTIFACT = "missing_artifact"
@@ -292,6 +300,7 @@ class FaultType(Enum):
 @dataclass
 class FaultInjection:
     """A single fault injection."""
+
     fault_id: str
     fault_type: FaultType
     description: str
@@ -303,6 +312,7 @@ class FaultInjection:
 @dataclass
 class HealingResult:
     """Result of healing attempt."""
+
     fault_id: str
     fault_type: str
     detection_time_ms: float
@@ -324,9 +334,11 @@ class HealingResult:
 # MAIN CAMPAIGN TEST V2
 # ============================================================================
 
+
 @dataclass
 class CampaignResultV2:
     """Full campaign result with all fixes applied."""
+
     campaign_id: str
     git_commit: str
     started_at: str
@@ -424,13 +436,15 @@ class FullCampaignTestV2:
 
     async def run_campaign(self) -> CampaignResultV2:
         """Execute the full campaign with all fixes."""
-        started_at = datetime.now(timezone.utc).isoformat()
+        started_at = datetime.now(UTC).isoformat()
 
         # Get git commit
         try:
-            git_commit = subprocess.check_output(
-                ["git", "rev-parse", "HEAD"], cwd="/home/brad/ironroot"
-            ).decode().strip()[:12]
+            git_commit = (
+                subprocess.check_output(["git", "rev-parse", "HEAD"], cwd="/home/brad/ironroot")
+                .decode()
+                .strip()[:12]
+            )
         except Exception:
             git_commit = "unknown"
 
@@ -483,11 +497,13 @@ class FullCampaignTestV2:
             belief_summary = await self._create_belief_summary(session, track1, track2)
 
             # 10) Hypotheses
-            hypotheses = await self._create_hypotheses_v2(session, track1, track2, world_model_reports)
+            hypotheses = await self._create_hypotheses_v2(
+                session, track1, track2, world_model_reports
+            )
 
             await session.commit()
 
-        completed_at = datetime.now(timezone.utc).isoformat()
+        completed_at = datetime.now(UTC).isoformat()
 
         return CampaignResultV2(
             campaign_id=self.campaign_id,
@@ -543,7 +559,7 @@ class FullCampaignTestV2:
             "git_commit_hash": git_commit,
             "strategy_baseline_id": "strategy_baseline_v1",
             "strategy_candidate_ids": ["strategy_v2", "strategy_v3", "strategy_v4"],
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "reality_sources": [
                 {
                     "name": s["name"],
@@ -585,10 +601,7 @@ class FullCampaignTestV2:
             print(f"\n--- Reality Source {i+1}: {source_name} ---")
 
             run_id = await self._create_run(session)
-            source = source_config["source_class"](
-                seed=self.seed + i,
-                **source_config["kwargs"]
-            )
+            source = source_config["source_class"](seed=self.seed + i, **source_config["kwargs"])
 
             # Reality proof
             proof = await self._create_reality_proof(session, run_id, source, source_config)
@@ -633,9 +646,9 @@ class FullCampaignTestV2:
         self, session: AsyncSession, run_id: str, source, source_config: dict
     ) -> dict:
         """Create reality proof bundle with seed commitment if needed."""
-        lock_time = datetime.now(timezone.utc).isoformat()
+        lock_time = datetime.now(UTC).isoformat()
         await asyncio.sleep(0.01)
-        acquisition_time = datetime.now(timezone.utc).isoformat()
+        acquisition_time = datetime.now(UTC).isoformat()
 
         observations = await source.acquire_observations()
         data_hash = observations[0].provenance.data_hash if observations else "none"
@@ -654,8 +667,7 @@ class FullCampaignTestV2:
         # Add seed commitment proof for non-external sources
         if not source_config["is_external"]:
             commitment = next(
-                (c for c in self.seed_commitments if c.parameters == source_config["kwargs"]),
-                None
+                (c for c in self.seed_commitments if c.parameters == source_config["kwargs"]), None
             )
             if commitment:
                 proof["seed_commitment"] = {
@@ -693,26 +705,29 @@ class FullCampaignTestV2:
                     upper = obs.value * 1.1
                 else:
                     lower, upper = 0, 1
-            else:  # 30% wrong
-                if isinstance(obs.value, (int, float)):
-                    lower = obs.value + 5
-                    upper = obs.value + 10
-                else:
-                    lower, upper = 0, 1
+            elif isinstance(obs.value, (int, float)):
+                lower = obs.value + 5
+                upper = obs.value + 10
+            else:
+                lower, upper = 0, 1
 
             is_numeric = isinstance(obs.value, (int, float))
             in_range = lower <= obs.value <= upper if is_numeric else True
-            penalty = 0.0 if in_range else abs(obs.value - (lower + upper) / 2) if is_numeric else 1.0
+            penalty = (
+                0.0 if in_range else abs(obs.value - (lower + upper) / 2) if is_numeric else 1.0
+            )
 
-            predictions.append({
-                "prediction_id": generate_id("pred"),
-                "metric_name": obs.metric_name,
-                "predicted_lower": round(lower, 4) if is_numeric else None,
-                "predicted_upper": round(upper, 4) if is_numeric else None,
-                "observation": round(obs.value, 4) if is_numeric else obs.value,
-                "contradicted": not in_range,
-                "penalty_applied": round(penalty, 4),
-            })
+            predictions.append(
+                {
+                    "prediction_id": generate_id("pred"),
+                    "metric_name": obs.metric_name,
+                    "predicted_lower": round(lower, 4) if is_numeric else None,
+                    "predicted_upper": round(upper, 4) if is_numeric else None,
+                    "observation": round(obs.value, 4) if is_numeric else obs.value,
+                    "contradicted": not in_range,
+                    "penalty_applied": round(penalty, 4),
+                }
+            )
 
             self.beliefs_written += 1
             if not in_range:
@@ -773,7 +788,9 @@ class FullCampaignTestV2:
             "passed": passed,
         }
 
-        print(f"    {cap.name}: {metric_value:.2f} vs {cap.success_threshold} -> {'PASS' if passed else 'FAIL'}")
+        print(
+            f"    {cap.name}: {metric_value:.2f} vs {cap.success_threshold} -> {'PASS' if passed else 'FAIL'}"
+        )
         return result
 
     async def _evaluate_world_models_properly(self, session: AsyncSession) -> list[dict]:
@@ -836,14 +853,16 @@ class FullCampaignTestV2:
                     if is_correct:
                         ood_correct += 1
 
-                query_results.append({
-                    "query_id": case.query_id,
-                    "intervention": case.intervention,
-                    "expected": case.expected_outcome,
-                    "predicted": round(predicted, 4),
-                    "is_ood": case.is_ood,
-                    "correct": is_correct,
-                })
+                query_results.append(
+                    {
+                        "query_id": case.query_id,
+                        "intervention": case.intervention,
+                        "expected": case.expected_outcome,
+                        "predicted": round(predicted, 4),
+                        "is_ood": case.is_ood,
+                        "correct": is_correct,
+                    }
+                )
 
             # Compute metrics (NON-PERFECT)
             counterfactual_accuracy = correct / len(held_out) if held_out else 0
@@ -947,18 +966,22 @@ class FullCampaignTestV2:
             }
 
             summary["per_capability"][cap_id] = cap_summary
-            summary["campaign_level"].append({
-                "capability": data["capability_name"],
-                "pass": campaign_pass,
-                "score": f"{mean_score:.2f} ± {std_score:.2f}",
-                "sources": f"{n_passed}/{n_sources}",
-            })
+            summary["campaign_level"].append(
+                {
+                    "capability": data["capability_name"],
+                    "pass": campaign_pass,
+                    "score": f"{mean_score:.2f} ± {std_score:.2f}",
+                    "sources": f"{n_passed}/{n_sources}",
+                }
+            )
 
             if campaign_pass:
                 summary["total_passed"] += 1
 
             status = "CAMPAIGN_PASS" if campaign_pass else "CAMPAIGN_FAIL"
-            print(f"  {data['capability_name']}: {mean_score:.2f} ± {std_score:.2f}, {n_passed}/{n_sources} sources -> {status}")
+            print(
+                f"  {data['capability_name']}: {mean_score:.2f} ± {std_score:.2f}, {n_passed}/{n_sources} sources -> {status}"
+            )
 
         return summary
 
@@ -992,7 +1015,8 @@ class FullCampaignTestV2:
             },
             {
                 "name": "v4_to_v5_mixed_results",
-                "treatment_scores": generate_scores(30, 0.85, 0.08) + generate_scores(20, 0.65, 0.15),
+                "treatment_scores": generate_scores(30, 0.85, 0.08)
+                + generate_scores(20, 0.65, 0.15),
                 "control_scores": generate_scores(50, 0.75, 0.12),
                 "expect_promote": False,  # Improves one domain, regresses another
             },
@@ -1013,7 +1037,7 @@ class FullCampaignTestV2:
                 reasoning = f"p-value {stats.p_value:.4f} >= 0.05"
             elif stats.effect_size < 0:
                 decision = "rejected_regression"
-                reasoning = f"Negative effect size indicates regression"
+                reasoning = "Negative effect size indicates regression"
             else:
                 decision = "promoted"
                 reasoning = "Statistically significant improvement above threshold"
@@ -1032,7 +1056,10 @@ class FullCampaignTestV2:
                 "t_statistic": float(stats.t_statistic),
                 "p_value": float(stats.p_value),  # ACTUALLY COMPUTED
                 "degrees_of_freedom": int(stats.degrees_of_freedom),
-                "confidence_interval_95": (float(stats.confidence_interval_95[0]), float(stats.confidence_interval_95[1])),
+                "confidence_interval_95": (
+                    float(stats.confidence_interval_95[0]),
+                    float(stats.confidence_interval_95[1]),
+                ),
                 "significant_at_05": bool(stats.significant_at_05),
                 "significant_at_01": bool(stats.significant_at_01),
                 "decision": decision,
@@ -1042,7 +1069,9 @@ class FullCampaignTestV2:
             promotions.append(promo)
 
             print(f"  Attempt {i + 1}: {case['name']}")
-            print(f"    n={stats.sample_size_treatment}+{stats.sample_size_control}, effect={stats.effect_size:.4f}, p={stats.p_value:.4f}")
+            print(
+                f"    n={stats.sample_size_treatment}+{stats.sample_size_control}, effect={stats.effect_size:.4f}, p={stats.p_value:.4f}"
+            )
             print(f"    CI95: {stats.confidence_interval_95}")
             print(f"    decision: {decision}")
 
@@ -1166,13 +1195,12 @@ class FullCampaignTestV2:
 
         return result
 
-    async def _create_belief_summary(self, session: AsyncSession, track1: dict, track2: dict) -> dict:
+    async def _create_belief_summary(
+        self, session: AsyncSession, track1: dict, track2: dict
+    ) -> dict:
         """Create belief survival summary."""
 
-        all_tables = (
-            track1.get("prediction_tables", []) +
-            track2.get("prediction_tables", [])
-        )
+        all_tables = track1.get("prediction_tables", []) + track2.get("prediction_tables", [])
 
         total_written = sum(t.get("total_predictions", 0) for t in all_tables)
         total_contradicted = sum(t.get("contradictions", 0) for t in all_tables)
@@ -1199,7 +1227,8 @@ class FullCampaignTestV2:
         healing_reports = track2.get("healing_reports", [])
         healing_success_rate = (
             sum(1 for h in healing_reports if h.get("invariants_pass")) / len(healing_reports)
-            if healing_reports else 0
+            if healing_reports
+            else 0
         )
 
         hypotheses = [
@@ -1301,10 +1330,18 @@ def format_campaign_output_v2(result: CampaignResultV2) -> str:
     lines.append("-" * 78)
     for table in result.track1_results.get("prediction_tables", []):
         lines.append(f"Source: {table['source_id']}")
-        lines.append(f"  total: {table['total_predictions']}, contradicted: {table['contradictions']}, penalty: {table['total_penalty']}")
+        lines.append(
+            f"  total: {table['total_predictions']}, contradicted: {table['contradictions']}, penalty: {table['total_penalty']}"
+        )
         for p in table["predictions"][:3]:
-            pred_range = f"[{p['predicted_lower']}, {p['predicted_upper']}]" if p['predicted_lower'] else "N/A"
-            lines.append(f"    {p['metric_name'][:20]:<20} {pred_range:<22} obs={p['observation']:<10} contra={p['contradicted']}")
+            pred_range = (
+                f"[{p['predicted_lower']}, {p['predicted_upper']}]"
+                if p["predicted_lower"]
+                else "N/A"
+            )
+            lines.append(
+                f"    {p['metric_name'][:20]:<20} {pred_range:<22} obs={p['observation']:<10} contra={p['contradicted']}"
+            )
         lines.append("")
 
     # 4) World Model Reports (FIXED)
@@ -1327,7 +1364,9 @@ def format_campaign_output_v2(result: CampaignResultV2) -> str:
         lines.append("  Sample queries:")
         for q in wm["sample_queries"][:3]:
             ood = "[OOD]" if q["is_ood"] else ""
-            lines.append(f"    do(a={q['intervention']['a']:.2f}){ood}: expected={q['expected']:.2f}, predicted={q['predicted']:.2f}, correct={q['correct']}")
+            lines.append(
+                f"    do(a={q['intervention']['a']:.2f}){ood}: expected={q['expected']:.2f}, predicted={q['predicted']:.2f}, correct={q['correct']}"
+            )
         lines.append("")
 
     # 5) Capability Summary (FIXED)
@@ -1343,7 +1382,9 @@ def format_campaign_output_v2(result: CampaignResultV2) -> str:
     lines.append(f"  {'-'*30} {'-'*15} {'-'*10} {'-'*10}")
     for cap in cap_sum["campaign_level"]:
         status = "PASS" if cap["pass"] else "FAIL"
-        lines.append(f"  {cap['capability']:<30} {cap['score']:<15} {cap['sources']:<10} {status:<10}")
+        lines.append(
+            f"  {cap['capability']:<30} {cap['score']:<15} {cap['sources']:<10} {status:<10}"
+        )
     lines.append("")
     lines.append("Per-Source Breakdown:")
     for cap_id, cap_data in cap_sum["per_capability"].items():
@@ -1359,9 +1400,15 @@ def format_campaign_output_v2(result: CampaignResultV2) -> str:
     lines.append("-" * 78)
     for promo in result.promotion_ledger:
         lines.append(f"Attempt {promo['attempt']}: {promo['baseline']} -> {promo['candidate']}")
-        lines.append(f"  sample_sizes: treatment={promo['sample_size_treatment']}, control={promo['sample_size_control']}")
-        lines.append(f"  means: treatment={promo['mean_treatment']:.4f}, control={promo['mean_control']:.4f}")
-        lines.append(f"  stds: treatment={promo['std_treatment']:.4f}, control={promo['std_control']:.4f}")
+        lines.append(
+            f"  sample_sizes: treatment={promo['sample_size_treatment']}, control={promo['sample_size_control']}"
+        )
+        lines.append(
+            f"  means: treatment={promo['mean_treatment']:.4f}, control={promo['mean_control']:.4f}"
+        )
+        lines.append(
+            f"  stds: treatment={promo['std_treatment']:.4f}, control={promo['std_control']:.4f}"
+        )
         lines.append(f"  effect_size: {promo['effect_size']:.4f}")
         lines.append(f"  t_statistic: {promo['t_statistic']:.4f}")
         lines.append(f"  p_value: {promo['p_value']:.4f} (COMPUTED, NOT FIXED)")
@@ -1375,7 +1422,9 @@ def format_campaign_output_v2(result: CampaignResultV2) -> str:
 
     accepted = sum(1 for p in result.promotion_ledger if p["decision"] == "promoted")
     rejected = len(result.promotion_ledger) - accepted
-    lines.append(f"SUMMARY: {len(result.promotion_ledger)} attempted, {accepted} promoted, {rejected} rejected")
+    lines.append(
+        f"SUMMARY: {len(result.promotion_ledger)} attempted, {accepted} promoted, {rejected} rejected"
+    )
     lines.append("")
 
     # 7) Healing Suite (FIXED)
@@ -1389,20 +1438,26 @@ def format_campaign_output_v2(result: CampaignResultV2) -> str:
         lines.append(f"  containment_time_ms: {heal['containment_time_ms']:.4f}")
         lines.append(f"  repair_time_ms: {heal['repair_time_ms']:.4f}")
         lines.append(f"  gate_rerun_time_ms: {heal['gate_rerun_time_ms']:.4f}")
-        lines.append(f"  total_restoration_time_ms: {heal['total_restoration_time_ms']:.4f} (END-TO-END)")
+        lines.append(
+            f"  total_restoration_time_ms: {heal['total_restoration_time_ms']:.4f} (END-TO-END)"
+        )
         lines.append(f"  attempts: {heal['attempts']}")
         lines.append(f"  final_status: {heal['final_status']}")
-        lines.append(f"  Gates After Healing:")
+        lines.append("  Gates After Healing:")
         lines.append(f"    invariants: {'PASS' if heal['invariants_pass'] else 'FAIL'}")
         lines.append(f"    integrity: {'PASS' if heal['integrity_pass'] else 'FAIL'}")
         lines.append(f"    replay: {'PASS' if heal['replay_pass'] else 'FAIL'}")
         lines.append(f"    regression: {'PASS' if heal['regression_pass'] else 'FAIL'}")
-        lines.append(f"  recurrence_over_10_runs: {heal['recurrence_count_over_10']}/10 ({heal['recurrence_rate']:.1%})")
+        lines.append(
+            f"  recurrence_over_10_runs: {heal['recurrence_count_over_10']}/10 ({heal['recurrence_rate']:.1%})"
+        )
         lines.append(f"  new_regression_tests: {len(heal['new_regression_tests'])}")
         lines.append("")
 
     total_healed = sum(1 for h in result.healing_suite if h["invariants_pass"])
-    lines.append(f"SUMMARY: {len(result.healing_suite)} fault types, {total_healed} healed, {len(result.healing_suite) - total_healed} failed")
+    lines.append(
+        f"SUMMARY: {len(result.healing_suite)} fault types, {total_healed} healed, {len(result.healing_suite) - total_healed} failed"
+    )
     lines.append("")
 
     # 8) Belief Summary
@@ -1439,15 +1494,19 @@ def format_campaign_output_v2(result: CampaignResultV2) -> str:
     lines.append(f"campaign_id: {result.campaign_id}")
     lines.append("")
     lines.append("Layer 1 (RIL++ Multi-Domain):")
-    lines.append(f"  external_sources: {sum(1 for s in result.reality_sources if s['is_external'])}")
-    lines.append(f"  committed_sources: {sum(1 for s in result.reality_sources if not s['is_external'])}")
+    lines.append(
+        f"  external_sources: {sum(1 for s in result.reality_sources if s['is_external'])}"
+    )
+    lines.append(
+        f"  committed_sources: {sum(1 for s in result.reality_sources if not s['is_external'])}"
+    )
     lines.append(f"  seed_commitments_verified: {len(result.seed_commitments)}")
     lines.append("")
     lines.append("Layer 2 (World Models):")
-    cf_accs = [r['counterfactual_accuracy'] for r in result.world_model_reports]
+    cf_accs = [r["counterfactual_accuracy"] for r in result.world_model_reports]
     lines.append(f"  counterfactual_accuracy_avg: {statistics.mean(cf_accs):.4f} (NOT 1.0)")
-    lines.append(f"  queries_per_model: 50 (20 held-out)")
-    lines.append(f"  includes_ood: yes")
+    lines.append("  queries_per_model: 50 (20 held-out)")
+    lines.append("  includes_ood: yes")
     lines.append("")
     lines.append("Layer 3 (Capabilities):")
     lines.append(f"  tested: {result.capability_summary['total_tested']}")
@@ -1458,14 +1517,18 @@ def format_campaign_output_v2(result: CampaignResultV2) -> str:
     lines.append(f"  promotions_attempted: {len(result.promotion_ledger)}")
     lines.append(f"  promotions_accepted: {accepted}")
     lines.append(f"  promotions_rejected: {len(result.promotion_ledger) - accepted}")
-    lines.append(f"  p_values_computed: yes (Welch's t-test)")
-    lines.append(f"  confidence_intervals: yes")
+    lines.append("  p_values_computed: yes (Welch's t-test)")
+    lines.append("  confidence_intervals: yes")
     lines.append("")
     lines.append("Layer 5 (Self-Healing):")
     lines.append(f"  fault_types_tested: {len(result.healing_suite)}")
     healed = sum(1 for h in result.healing_suite if h["invariants_pass"])
     lines.append(f"  successfully_healed: {healed}/{len(result.healing_suite)}")
-    avg_time = statistics.mean([h["total_restoration_time_ms"] for h in result.healing_suite]) if result.healing_suite else 0
+    avg_time = (
+        statistics.mean([h["total_restoration_time_ms"] for h in result.healing_suite])
+        if result.healing_suite
+        else 0
+    )
     lines.append(f"  avg_restoration_time_ms: {avg_time:.2f}")
     lines.append("")
     lines.append(f"artifacts_generated: {len(result.artifacts)}")
