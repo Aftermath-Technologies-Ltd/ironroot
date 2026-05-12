@@ -483,8 +483,31 @@ async def restore_correctness(
 
     restorer = get_self_healing_restorer()
 
+    # Phase 2b.1: restoration now requires a FaultFixture for
+    # determinism (recurrence is measured by replaying the fixture, not
+    # by sampling RNG). Callers using this API endpoint don't carry a
+    # FaultFixture, so we construct a no-op fixture whose revert /
+    # replay both do nothing. The restorer still runs the real gate
+    # checks against the live chain — which is the operator's actual
+    # question: "are invariants intact and is the replay digest
+    # stable?". For deterministic fault-injection campaigns, use the
+    # FaultFixture API directly rather than this endpoint.
+    from ironroot.verification.fault_fixtures import FaultFixture, ObservedFaultEffect
+
+    class _NoopFixture(FaultFixture):
+        async def apply(self, session: AsyncSession, run_id: str) -> ObservedFaultEffect:
+            return ObservedFaultEffect(fixture_id=self.fixture_id)
+
+        async def revert(self, session: AsyncSession, run_id: str) -> None:
+            return None
+
+    noop_fixture = _NoopFixture(
+        fixture_id=f"noop:{violation_id}",
+        description="no-op fixture for legacy /restore endpoint",
+    )
+
     try:
-        report = await restorer.restore_correctness(session, violation_id, run_id)
+        report = await restorer.restore_correctness(session, violation_id, run_id, noop_fixture)
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

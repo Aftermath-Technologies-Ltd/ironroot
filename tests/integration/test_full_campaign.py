@@ -554,8 +554,27 @@ class FullCampaignTest:
 
         print(f"  Injected: {violation.invariant_type.value} - {violation.description}")
 
-        # attempt restoration
-        report = await self.restorer.restore_correctness(session, violation.violation_id, run_id)
+        # attempt restoration. Phase 2b.1 requires a FaultFixture for
+        # deterministic recurrence checking. The campaign test does not
+        # actually mutate the chain, so a no-op fixture is the honest
+        # choice: it exercises the restorer's gate-checking path without
+        # asserting a real fault was reverted.
+        from ironroot.verification.fault_fixtures import FaultFixture, ObservedFaultEffect
+
+        class _NoopFixture(FaultFixture):
+            async def apply(self, session: AsyncSession, run_id: str) -> ObservedFaultEffect:
+                return ObservedFaultEffect(fixture_id=self.fixture_id)
+
+            async def revert(self, session: AsyncSession, run_id: str) -> None:
+                return None
+
+        fixture = _NoopFixture(
+            fixture_id=f"noop:{violation.violation_id}",
+            description="no-op campaign fixture",
+        )
+        report = await self.restorer.restore_correctness(
+            session, violation.violation_id, run_id, fixture
+        )
 
         healing_result = {
             "violation_id": violation.violation_id,

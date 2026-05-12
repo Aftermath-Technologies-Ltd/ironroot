@@ -1,14 +1,30 @@
 # Author: Bradley R. Kinnard
-"""Self-healing Correctness Restoration.
+"""Self-healing correctness restoration (Phase 2b.2 / 2b.3).
 
-Repair + invariant restoration with verification.
-End state must have:
-- invariants gate restored to PASS
-- replay gate restored to PASS
-- regression test suite expanded
-- recurrence rate near zero
+Each restoration attempt runs against a known ``FaultFixture`` so the
+pipeline is deterministic. End-state assertions are produced by the
+real gate service (``verification.gate_service``); ``_verify_invariants``
+and ``_verify_replay`` are no longer stubs.
+
+Restoration outcomes are written as typed beliefs with provenance
+pointing at the fault fixture id and any upstream evidence belief or
+artifact:
+
+* one ``OBSERVATION`` belief per measured metric (``recovery_attempts``,
+  ``recurrence_rate``, …) — these are PRIMARY observations that sit at
+  the bottom of the inference graph.
+* one ``INFERENCE`` belief naming the conclusion (``restored`` or
+  ``unrecoverable``) with provenance back to the fault fixture and
+  the gate-result beliefs the gate service wrote.
+
+The old RNG-driven ``_check_recurrence`` is gone. Recurrence is now
+determined by re-running the same FaultFixture under the same fixture
+id.
 """
 
+from __future__ import annotations
+
+import contextlib
 import json
 import statistics
 import time
@@ -16,12 +32,17 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
+from ironroot.beliefs import MetricClass, ProvenanceRef, get_belief_service
 from ironroot.domain.ids import generate_id
 from ironroot.storage.artifact_service import get_artifact_service
+from ironroot.verification.gate_service import get_gate_service
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from ironroot.verification.fault_fixtures import FaultFixture, ObservedFaultEffect
 
 
 class RestorationStatus(str, Enum):
@@ -39,16 +60,16 @@ class RestorationStatus(str, Enum):
 class InvariantType(str, Enum):
     """types of invariants that can be broken."""
 
-    HASH_CHAIN = "hash_chain"  # belief/artifact hash chain
-    BUDGET = "budget"  # resource budget violation
-    PHASE = "phase"  # invalid phase transition
-    REPLAY = "replay"  # non-deterministic replay
-    ARTIFACT = "artifact"  # corrupted artifact
-    BELIEF = "belief"  # contradicted belief
-    ARTIFACT_TAMPER = "artifact_tamper"  # artifact content modified
-    MISSING_ARTIFACT = "missing_artifact"  # referenced artifact not found
-    NONDETERMINISM = "nondeterminism"  # replay divergence
-    VERIFIER_CORRUPTION = "verifier_corruption"  # invalid verifier attestation
+    HASH_CHAIN = "hash_chain"
+    BUDGET = "budget"
+    PHASE = "phase"
+    REPLAY = "replay"
+    ARTIFACT = "artifact"
+    BELIEF = "belief"
+    ARTIFACT_TAMPER = "artifact_tamper"
+    MISSING_ARTIFACT = "missing_artifact"
+    NONDETERMINISM = "nondeterminism"
+    VERIFIER_CORRUPTION = "verifier_corruption"
 
 
 @dataclass
@@ -96,13 +117,21 @@ class RestorationReport:
 
 
 class SelfHealingRestorer:
-    """self-healing system with correctness restoration."""
+    """deterministic self-healing pipeline.
+
+    The restorer requires a ``FaultFixture`` as input — the same fixture
+    that produced the violation in the first place. Recurrence is
+    measured by re-playing the fixture under controlled conditions,
+    NOT by sampling a probability.
+    """
 
     MAX_RESTORATION_ATTEMPTS = 5
     RECURRENCE_CHECK_COUNT = 10
 
     def __init__(self) -> None:
         self._artifact_service = get_artifact_service()
+        self._gate_service = get_gate_service()
+        self._belief_service = get_belief_service()
         self._violations: dict[str, InvariantViolation] = {}
         self._restoration_history: dict[str, RestorationReport] = {}
         self._regression_tests: list[Callable[[], bool]] = []
@@ -115,7 +144,6 @@ class SelfHealingRestorer:
         component: str,
         evidence: dict[str, Any],
     ) -> InvariantViolation:
-        """registers a detected invariant violation."""
         violation = InvariantViolation(
             violation_id=generate_id("vio"),
             invariant_type=invariant_type,
@@ -133,87 +161,98 @@ class SelfHealingRestorer:
         session: AsyncSession,
         violation_id: str,
         run_id: str,
+        fault_fixture: FaultFixture,
     ) -> RestorationReport:
-        """attempts to restore correctness after a violation.
+        """attempts to restore correctness after a fixture-driven violation.
 
-        Process:
-        1. Attempt repair strategies
-        2. Verify invariants restored
-        3. Verify replay gate passes
-        4. Add regression tests
-        5. Check for recurrence
+        Process (no RNG anywhere):
+
+        1. Revert the fault fixture (this is the "repair").
+        2. Run the real gate service — invariants + replay must now
+           pass for the attempt to count as ``invariants_restored`` and
+           ``replay_restored``.
+        3. Record the outcome as a typed INFERENCE belief whose
+           provenance points at the fault fixture id and the gate
+           result beliefs.
+        4. For recurrence: re-apply the fixture (in a sandboxed
+           session) RECURRENCE_CHECK_COUNT times. Each replay either
+           still trips the gates (recurrence_count++) or doesn't.
+           Always revert before exiting.
         """
         if violation_id not in self._violations:
             raise ValueError(f"unknown violation: {violation_id}")
 
         violation = self._violations[violation_id]
-        attempts = []
+        attempts: list[RestorationAttempt] = []
         final_status = RestorationStatus.FAILED
         time_to_invariant_ms = 0.0
 
-        # Try restoration strategies
-        strategies = self._get_restoration_strategies(violation.invariant_type)
+        # The fixture's `revert` is the only strategy we run because it
+        # is the only one that mechanically undoes the named fault. The
+        # old strategy table was decorative; the real action is "undo".
+        start_time = time.time()
+        attempt = RestorationAttempt(
+            attempt_id=generate_id("rst"),
+            violation_id=violation_id,
+            strategy=f"fault_fixture_revert:{fault_fixture.fixture_id}",
+            started_at=datetime.now(UTC).isoformat(),
+        )
 
-        for strategy_name in strategies[: self.MAX_RESTORATION_ATTEMPTS]:
-            start_time = time.time()
-            attempt = RestorationAttempt(
-                attempt_id=generate_id("rst"),
-                violation_id=violation_id,
-                strategy=strategy_name,
-                started_at=datetime.now(UTC).isoformat(),
-            )
+        try:
+            await fault_fixture.revert(session, run_id)
+            await session.flush()
 
-            try:
-                # Apply restoration strategy
-                success = await self._apply_strategy(session, violation, strategy_name)
+            invariants_ok = await self._verify_invariants(session, run_id)
+            attempt.invariants_restored = invariants_ok
+            elapsed_ms = (time.time() - start_time) * 1000
+            attempt.time_to_restore_ms = elapsed_ms
+            if invariants_ok and time_to_invariant_ms == 0:
+                time_to_invariant_ms = elapsed_ms
 
-                elapsed_ms = (time.time() - start_time) * 1000
-                attempt.time_to_restore_ms = elapsed_ms
+            replay_ok = await self._verify_replay(session, run_id)
+            attempt.replay_restored = replay_ok
 
-                if success:
-                    # Verify invariants
-                    invariants_ok = await self._verify_invariants(session, violation)
-                    attempt.invariants_restored = invariants_ok
+            test_added = self._add_regression_test(violation)
+            attempt.regression_tests_added = 1 if test_added else 0
 
-                    if invariants_ok and time_to_invariant_ms == 0:
-                        time_to_invariant_ms = elapsed_ms
+            if invariants_ok and replay_ok:
+                attempt.success = True
+                final_status = RestorationStatus.VERIFIED
 
-                    # Verify replay
-                    replay_ok = await self._verify_replay(session, violation)
-                    attempt.replay_restored = replay_ok
+            attempt.completed_at = datetime.now(UTC).isoformat()
+        except Exception as exc:  # pragma: no cover - defensive
+            attempt.completed_at = datetime.now(UTC).isoformat()
+            attempt.success = False
+            attempt.invariants_restored = False
+            attempt.replay_restored = False
+            attempt.regression_tests_added = 0
+            attempt.time_to_restore_ms = (time.time() - start_time) * 1000
+            violation.evidence["restoration_error"] = str(exc)
 
-                    # Add regression test
-                    test_added = self._add_regression_test(violation)
-                    attempt.regression_tests_added = 1 if test_added else 0
+        attempts.append(attempt)
 
-                    if invariants_ok and replay_ok:
-                        attempt.success = True
-                        final_status = RestorationStatus.VERIFIED
-
-                attempt.completed_at = datetime.now(UTC).isoformat()
-                attempts.append(attempt)
-
-                if attempt.success:
-                    break
-
-            except Exception:
-                attempt.completed_at = datetime.now(UTC).isoformat()
-                attempts.append(attempt)
-                continue
-
-        # Check for recurrence
+        # Recurrence: replay the fixture deterministically. Each replay
+        # applies then reverts, so the chain is left in a clean state.
         recurrence_count = 0
+        recurrence_evidence: list[ObservedFaultEffect] = []
         for _ in range(self.RECURRENCE_CHECK_COUNT):
-            if self._check_recurrence(violation):
+            effect = await fault_fixture.replay(session, run_id)
+            recurrence_evidence.append(effect)
+            # If applying the fixture produces ANY observed effect on the
+            # chain, that is by definition a recurrence — the fault can
+            # still happen against this chain shape. The only way to
+            # eliminate recurrence is to change the chain so the fixture
+            # can no longer apply (e.g., the targeted row was rebuilt
+            # under a different id). We model this honestly: a fixture
+            # that still applies has recurred.
+            if effect.before != effect.after:
                 recurrence_count += 1
 
         recurrence_rate = recurrence_count / self.RECURRENCE_CHECK_COUNT
 
-        # Compute success rate
         successful_attempts = sum(1 for a in attempts if a.success)
         success_rate = successful_attempts / len(attempts) if attempts else 0.0
 
-        # Collect new regression tests
         new_tests = [f"regression_test_{violation.invariant_type.value}_{violation.violation_id}"]
 
         report = RestorationReport(
@@ -228,14 +267,30 @@ class SelfHealingRestorer:
             new_regression_tests=new_tests if final_status == RestorationStatus.VERIFIED else [],
         )
 
-        # Store report artifact
+        await self._record_restoration_beliefs(
+            session=session,
+            run_id=run_id,
+            violation=violation,
+            report=report,
+            fault_fixture=fault_fixture,
+        )
+
+        # Re-seal the replay baseline iff the restoration verified.
+        # Restoration legitimately added observation/inference beliefs;
+        # the replay gate must treat the new chain as the new ground
+        # truth or it will report drift forever. Audit trail lives in
+        # the gate_result + restoration_report artifacts.
+        if final_status == RestorationStatus.VERIFIED:
+            with contextlib.suppress(Exception):  # pragma: no cover - defensive
+                await self._gate_service.reseal_replay_baseline(session, run_id)
+
         await self._artifact_service.store_artifact(
             session=session,
             data=json.dumps(
                 {
                     "violation_id": violation.violation_id,
                     "invariant_type": violation.invariant_type.value,
-                    "description": violation.description,
+                    "fault_fixture_id": fault_fixture.fixture_id,
                     "final_status": final_status.value,
                     "attempts": len(attempts),
                     "time_to_invariant_restoration_ms": time_to_invariant_ms,
@@ -253,111 +308,137 @@ class SelfHealingRestorer:
         self._restoration_history[violation_id] = report
         return report
 
-    def _get_restoration_strategies(self, invariant_type: InvariantType) -> list[str]:
-        """returns ordered list of restoration strategies for a violation type."""
-        strategies = {
-            InvariantType.HASH_CHAIN: [
-                "recompute_hash_chain",
-                "rollback_to_last_valid",
-                "rebuild_chain_from_artifacts",
-            ],
-            InvariantType.BUDGET: [
-                "reset_budget_counters",
-                "rollback_to_budget_snapshot",
-            ],
-            InvariantType.PHASE: [
-                "force_phase_transition",
-                "rollback_to_previous_phase",
-            ],
-            InvariantType.REPLAY: [
-                "reseed_random_state",
-                "restore_input_snapshot",
-                "clear_nondeterministic_cache",
-            ],
-            InvariantType.ARTIFACT: [
-                "verify_and_repair_artifact",
-                "restore_from_backup",
-                "recompute_artifact",
-            ],
-            InvariantType.BELIEF: [
-                "mark_belief_contradicted",
-                "add_contradiction_record",
-            ],
-        }
-        return strategies.get(invariant_type, ["generic_rollback"])
+    async def _verify_invariants(self, session: AsyncSession, run_id: str) -> bool:
+        """real invariants check via gate_service.
 
-    async def _apply_strategy(
-        self,
-        session: AsyncSession,
-        violation: InvariantViolation,
-        strategy: str,
-    ) -> bool:
-        """applies a restoration strategy."""
-        # Simplified implementations - in production these would be full repairs
+        Returns True iff the invariants gate's decision dict reports
+        ``passed=True``. We do NOT run the full gate suite because we
+        only need the invariant signal here; the caller decides whether
+        to run the full suite next.
+        """
+        try:
+            decision = await self._gate_service._check_invariants(session, run_id)
+        except Exception:  # pragma: no cover - defensive
+            return False
+        return bool(decision.get("passed", False))
 
-        if strategy == "recompute_hash_chain":
-            # Would recompute hashes from source data
-            return True
+    async def _verify_replay(self, session: AsyncSession, run_id: str) -> bool:
+        """real replay check via gate_service.
 
-        if strategy == "rollback_to_last_valid":
-            # Would restore from snapshot
-            return True
-
-        if strategy == "reset_budget_counters":
-            # Would reset to safe defaults
-            return True
-
-        if strategy == "force_phase_transition":
-            # Would set phase to valid state
-            return True
-
-        if strategy == "reseed_random_state":
-            # Would reset RNG to known seed
-            return True
-
-        if strategy == "mark_belief_contradicted":
-            # Would update belief confidence to 0
-            return True
-
-        # Generic strategies
-        return True
-
-    async def _verify_invariants(
-        self,
-        session: AsyncSession,
-        violation: InvariantViolation,
-    ) -> bool:
-        """verifies invariants are restored."""
-        # Would run actual invariant checks
-        # For now, return True to simulate successful verification
-        return True
-
-    async def _verify_replay(
-        self,
-        session: AsyncSession,
-        violation: InvariantViolation,
-    ) -> bool:
-        """verifies replay gate passes."""
-        # Would run replay verification
-        return True
+        Returns True iff the replay digest matches the sealed baseline.
+        If no baseline is sealed, the gate seals one and reports passed
+        — that case still counts as restored (the digest is well-defined
+        and stable from this point on).
+        """
+        try:
+            decision = await self._gate_service._check_replay(session, run_id, seed=0)
+        except Exception:  # pragma: no cover - defensive
+            return False
+        return bool(decision.get("passed", False))
 
     def _add_regression_test(self, violation: InvariantViolation) -> bool:
-        """adds a regression test for this violation type."""
+        """records a placeholder regression-test entry for stats.
 
-        def regression_test():
-            # Would check that this specific violation doesn't recur
+        The real regression suite registry (Phase 2a.2) is the
+        canonical home for executable checks. This list is only for
+        aggregate restoration statistics.
+        """
+
+        def regression_test() -> bool:
             return True
 
         self._regression_tests.append(regression_test)
         return True
 
-    def _check_recurrence(self, violation: InvariantViolation) -> bool:
-        """checks if the violation recurs."""
-        # Would inject the same conditions and check if violation happens
-        # For now, simulate low recurrence
-        import random
+    async def _record_restoration_beliefs(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        violation: InvariantViolation,
+        report: RestorationReport,
+        fault_fixture: FaultFixture,
+    ) -> None:
+        """writes typed beliefs for the restoration outcome (Phase 2b.3).
 
-        return random.random() < 0.05  # 5% recurrence rate
+        Two layers:
+
+        1. PRIMARY observations: ``time_to_invariant_restoration_ms``,
+           ``repair_success_rate_over_trials``, ``recurrence_rate_over_10_runs``.
+           These sit at the bottom of the inference graph — no provenance
+           required.
+        2. One INFERENCE belief naming the conclusion
+           (``restored`` / ``unrecoverable``) with provenance back to
+           the fault fixture id.
+        """
+        observation_metrics: tuple[tuple[str, float, str, str], ...] = (
+            (
+                "time_to_invariant_restoration_ms",
+                report.time_to_invariant_restoration_ms,
+                "milliseconds",
+                "elapsed wall-clock time from fault revert to invariants gate pass",
+            ),
+            (
+                "repair_success_rate_over_trials",
+                report.repair_success_rate_over_trials,
+                "ratio",
+                "fraction of restoration attempts that achieved invariants+replay pass",
+            ),
+            (
+                "recurrence_rate_over_10_runs",
+                report.recurrence_rate,
+                "probability",
+                "fraction of fixture replays that observed an effect on the chain",
+            ),
+        )
+
+        for metric_name, value, unit, method in observation_metrics:
+            # A broken chain (the very thing we're restoring) can prevent
+            # appends; we proceed so the restoration record still lands
+            # as an artifact.
+            with contextlib.suppress(Exception):  # pragma: no cover - defensive
+                await self._belief_service.append_observation(
+                    session=session,
+                    run_id=run_id,
+                    agent_id="self_healing_restorer",
+                    metric_name=metric_name,
+                    value=value,
+                    unit=unit,
+                    method=method,
+                    metric_class=MetricClass.PRIMARY,
+                    artifact_ids=[],
+                    topic_tags=["self_healing"],
+                )
+
+        with contextlib.suppress(Exception):  # pragma: no cover - defensive
+            await self._belief_service.append_inference(
+                session=session,
+                run_id=run_id,
+                agent_id="self_healing_restorer",
+                claim=(
+                    "restoration_verified"
+                    if report.final_status == RestorationStatus.VERIFIED
+                    else "restoration_failed"
+                ),
+                provenance=ProvenanceRef(
+                    kind="restoration_outcome",
+                    fixture_ids=(fault_fixture.fixture_id,),
+                    notes=(
+                        f"violation={violation.violation_id} status="
+                        f"{report.final_status.value} attempts={len(report.attempts)} "
+                        f"recurrence={report.recurrence_count}/{report.recurrence_checks}"
+                    ),
+                ),
+                topic_tags=["self_healing", "restoration"],
+                confidence=1.0 if report.final_status == RestorationStatus.VERIFIED else 0.0,
+                details={
+                    "violation_id": violation.violation_id,
+                    "fault_fixture_id": fault_fixture.fixture_id,
+                    "attempts": len(report.attempts),
+                    "invariants_restored": any(a.invariants_restored for a in report.attempts),
+                    "replay_restored": any(a.replay_restored for a in report.attempts),
+                    "recurrence_rate": report.recurrence_rate,
+                },
+            )
 
     def get_restoration_stats(self) -> dict[str, Any]:
         """returns aggregate restoration statistics."""
@@ -365,9 +446,7 @@ class SelfHealingRestorer:
             return {"total_restorations": 0}
 
         reports = list(self._restoration_history.values())
-
         verified = sum(1 for r in reports if r.final_status == RestorationStatus.VERIFIED)
-
         avg_time = (
             statistics.mean(
                 r.time_to_invariant_restoration_ms
@@ -377,7 +456,6 @@ class SelfHealingRestorer:
             if any(r.time_to_invariant_restoration_ms > 0 for r in reports)
             else 0.0
         )
-
         avg_success_rate = statistics.mean(r.repair_success_rate_over_trials for r in reports)
         avg_recurrence = statistics.mean(r.recurrence_rate for r in reports)
 
@@ -396,7 +474,6 @@ _restorer: SelfHealingRestorer | None = None
 
 
 def get_self_healing_restorer() -> SelfHealingRestorer:
-    """returns shared self-healing restorer."""
     global _restorer
     if _restorer is None:
         _restorer = SelfHealingRestorer()

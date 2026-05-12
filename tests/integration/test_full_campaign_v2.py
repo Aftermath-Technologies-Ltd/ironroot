@@ -1144,7 +1144,22 @@ class FullCampaignTestV2:
         containment_time = (time.perf_counter() - containment_start) * 1000
 
         repair_start = time.perf_counter()
-        report = await self.restorer.restore_correctness(session, violation.violation_id, run_id)
+        from ironroot.verification.fault_fixtures import FaultFixture, ObservedFaultEffect
+
+        class _NoopFixture(FaultFixture):
+            async def apply(self, session: AsyncSession, run_id: str) -> ObservedFaultEffect:
+                return ObservedFaultEffect(fixture_id=self.fixture_id)
+
+            async def revert(self, session: AsyncSession, run_id: str) -> None:
+                return None
+
+        _fixture = _NoopFixture(
+            fixture_id=f"noop:{violation.violation_id}",
+            description="no-op campaign-v2 fixture",
+        )
+        report = await self.restorer.restore_correctness(
+            session, violation.violation_id, run_id, _fixture
+        )
         repair_time = (time.perf_counter() - repair_start) * 1000
 
         gate_start = time.perf_counter()

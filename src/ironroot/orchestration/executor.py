@@ -30,12 +30,23 @@ class FaultScenario(str, Enum):
 
 @dataclass
 class FaultInjectionConfig:
-    """fault injection configuration."""
+    """fault injection configuration.
+
+    Phase 2b.1: the executor now delegates fault behaviour to a named
+    ``FaultFixture`` resolved via ``fixture_id``. The fixture is the
+    deterministic source of truth for what to break and how to revert.
+
+    Legacy fields (``scenario_id``, ``trigger_condition``, …) are kept
+    for backward compatibility with the older RNG-driven path but only
+    ``percent_*`` triggers are removed because they depended on RNG.
+    Supported triggers are ``always`` and ``trial_<N>``.
+    """
 
     enabled: bool = False
+    fixture_id: str = ""  # FaultFixture.fixture_id, registered via get_fault_fixture_registry
     scenario_id: str = "none"
     trigger_phase: str = "test"
-    trigger_condition: str = "always"  # "always", "trial_3", "percent_50"
+    trigger_condition: str = "always"
     expected_signature: str = ""
 
 
@@ -130,10 +141,7 @@ class RunExecutor:
         verifier_artifact_id: str | None = None
         failed_checks: list[dict[str, str]] = []
         fault_artifact_id: str | None = None
-        containment_artifact_id: str | None = None
-        rollback_artifact_id: str | None = None
-        repair_artifact_id: str | None = None
-        regression_artifact_id: str | None = None
+        observed_fault_effect: dict[str, Any] | None = None
         trial_index = 0
 
         phase_sequence = [
@@ -186,148 +194,54 @@ class RunExecutor:
             await self._update_budget(session, run_id, budget)
 
             # === FAULT INJECTION ===
-            should_inject = self._should_inject_fault(
-                fi_config, target_phase.value, trial_index, rng
-            )
+            # === FAULT INJECTION (Phase 2b.1 — deterministic) ===
+            #
+            # If the run config names a FaultFixture and we're in the
+            # configured trigger phase, the executor applies the fixture
+            # against the live chain and records the OBSERVED effect.
+            # The fixture is responsible for being deterministic; the
+            # executor records what happened, not a sampled probability.
+            #
+            # Repair / regression / restoration is no longer the
+            # executor's job. The self-healing pipeline (see
+            # `ironroot.healing.restoration.SelfHealingRestorer`)
+            # consumes the fixture id from the observed-effect belief
+            # and runs deterministic restoration via the same fixture's
+            # `revert` method.
+            should_inject = self._should_inject_fault(fi_config, target_phase.value, trial_index)
 
-            if should_inject:
-                healing_state.fault_detected = True
-                healing_state.fault_timestamp = time.time()
-
-                # create fault injection artifact
-                fault_data = {
-                    "scenario_id": fi_config.scenario_id,
-                    "trigger_phase": target_phase.value,
-                    "trigger_condition": fi_config.trigger_condition,
-                    "trial_index": trial_index,
-                    "expected_signature": fi_config.expected_signature,
-                    "affected_components": self._get_affected_components(fi_config.scenario_id),
-                    "timestamp": datetime.now(UTC).isoformat(),
-                }
+            if should_inject and fi_config.fixture_id:
+                fixture = self._resolve_fault_fixture(fi_config.fixture_id)
+                if fixture is None:
+                    fault_data = {
+                        "fixture_id": fi_config.fixture_id,
+                        "error": "fixture_not_registered",
+                        "trigger_phase": target_phase.value,
+                        "trial_index": trial_index,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                else:
+                    healing_state.fault_detected = True
+                    healing_state.fault_timestamp = time.time()
+                    effect = await fixture.apply(session, run_id)
+                    observed_fault_effect = effect.to_dict()
+                    fault_data = {
+                        "fixture_id": fixture.fixture_id,
+                        "fixture_description": fixture.description,
+                        "trigger_phase": target_phase.value,
+                        "trial_index": trial_index,
+                        "observed_effect": observed_fault_effect,
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
                 fault_artifact = await artifact_service.store_artifact(
                     session=session,
-                    data=json.dumps(fault_data).encode(),
+                    data=json.dumps(fault_data, sort_keys=True).encode(),
                     artifact_type="fault_injection_report",
                     created_by="fault_injector",
                     run_id=run_id,
                     filename=f"fault_injection_{run_id}.json",
                 )
                 fault_artifact_id = fault_artifact.id
-
-                # === CONTAINMENT ===
-                healing_state.commits_frozen = True
-                healing_state.containment_timestamp = time.time()
-
-                containment_data = {
-                    "fault_artifact_id": fault_artifact_id,
-                    "commits_frozen": True,
-                    "freeze_timestamp": datetime.now(UTC).isoformat(),
-                    "detection_method": "gate_invariant_check",
-                    "affected_phase": target_phase.value,
-                }
-                containment_artifact = await artifact_service.store_artifact(
-                    session=session,
-                    data=json.dumps(containment_data).encode(),
-                    artifact_type="containment_report",
-                    created_by="containment_service",
-                    run_id=run_id,
-                    filename=f"containment_{run_id}.json",
-                )
-                containment_artifact_id = containment_artifact.id
-
-                # === ROLLBACK ===
-                rollback_data = {
-                    "fault_artifact_id": fault_artifact_id,
-                    "rollback_target": healing_state.last_verified_state,
-                    "rollback_timestamp": datetime.now(UTC).isoformat(),
-                    "components_reset": self._get_affected_components(fi_config.scenario_id),
-                }
-                rollback_artifact = await artifact_service.store_artifact(
-                    session=session,
-                    data=json.dumps(rollback_data).encode(),
-                    artifact_type="rollback_report",
-                    created_by="rollback_service",
-                    run_id=run_id,
-                    filename=f"rollback_{run_id}.json",
-                )
-                rollback_artifact_id = rollback_artifact.id
-
-                # === REPAIR SEQUENCE ===
-                repair_success = False
-                max_attempts = 3 if fi_config.scenario_id == "intermittent_timing" else 1
-
-                for attempt in range(max_attempts):
-                    healing_state.recovery_attempts += 1
-                    repair_action = self._generate_repair_action(
-                        fi_config.scenario_id, attempt, rng
-                    )
-                    healing_state.repair_actions.append(repair_action)
-
-                    # intermittent faults may need multiple attempts
-                    if fi_config.scenario_id == "simple_invariant":
-                        repair_success = True
-                        break
-                    elif fi_config.scenario_id == "intermittent_timing":
-                        # 70% success on each attempt for intermittent
-                        if rng.random() < 0.7:
-                            repair_success = True
-                            break
-
-                healing_state.recovery_timestamp = time.time()
-
-                repair_data = {
-                    "fault_artifact_id": fault_artifact_id,
-                    "attempts": healing_state.recovery_attempts,
-                    "actions": healing_state.repair_actions,
-                    "success": repair_success,
-                    "repair_timestamp": datetime.now(UTC).isoformat(),
-                }
-                repair_artifact = await artifact_service.store_artifact(
-                    session=session,
-                    data=json.dumps(repair_data).encode(),
-                    artifact_type="repair_report",
-                    created_by="repair_service",
-                    run_id=run_id,
-                    filename=f"repair_{run_id}.json",
-                )
-                repair_artifact_id = repair_artifact.id
-
-                # === REGRESSION TEST GENERATION ===
-                regression_tests = self._generate_regression_tests(
-                    fi_config.scenario_id, healing_state.repair_actions, rng
-                )
-                healing_state.regression_tests_added = len(regression_tests)
-
-                # verify tests fail before fix (simulated)
-                pre_fix_results = [
-                    {"test": t["name"], "passed": False, "reason": "fault active"}
-                    for t in regression_tests
-                ]
-                # verify tests pass after fix (simulated)
-                post_fix_results = [
-                    {"test": t["name"], "passed": repair_success, "reason": "repair applied"}
-                    for t in regression_tests
-                ]
-
-                regression_data = {
-                    "fault_artifact_id": fault_artifact_id,
-                    "tests_added": regression_tests,
-                    "pre_fix_results": pre_fix_results,
-                    "post_fix_results": post_fix_results,
-                    "timestamp": datetime.now(UTC).isoformat(),
-                }
-                regression_artifact = await artifact_service.store_artifact(
-                    session=session,
-                    data=json.dumps(regression_data).encode(),
-                    artifact_type="regression_report",
-                    created_by="regression_service",
-                    run_id=run_id,
-                    filename=f"regression_{run_id}.json",
-                )
-                regression_artifact_id = regression_artifact.id
-
-                # unfreeze commits after gates pass
-                healing_state.commits_frozen = False
 
             # lifecycle belief for phase completion
             phase_belief = await belief_service.create_lifecycle_belief(
@@ -444,127 +358,12 @@ class RunExecutor:
                 await self._update_budget(session, run_id, budget)
                 last_belief_hash = obs_counter.content_hash
 
-                # === SELF-HEALING METRICS (only if fault was injected) ===
-                if healing_state.fault_detected:
-                    artifact_refs = [
-                        a
-                        for a in [
-                            fault_artifact_id,
-                            containment_artifact_id,
-                            rollback_artifact_id,
-                            repair_artifact_id,
-                            regression_artifact_id,
-                        ]
-                        if a
-                    ]
-
-                    # time_to_containment_ms
-                    containment_ms = int(
-                        (healing_state.containment_timestamp - healing_state.fault_timestamp)
-                        * 1000
-                    )
-                    obs_containment = await belief_service.create_observation_belief(
-                        session=session,
-                        run_id=run_id,
-                        agent_id="selfheal_agent",
-                        metric_name="time_to_containment_ms",
-                        value=containment_ms,
-                        unit="milliseconds",
-                        method="elapsed time from fault detection to commit freeze",
-                        metric_class=MetricClass.PRIMARY,
-                        artifact_ids=artifact_refs,
-                        topic_tags=["selfhealing", "containment"],
-                        parent_hash=last_belief_hash,
-                    )
-                    observation_ids.append(obs_containment.id)
-                    primary_observation_ids.append(obs_containment.id)
-                    budget.use_belief_write(1)
-                    await self._update_budget(session, run_id, budget)
-                    last_belief_hash = obs_containment.content_hash
-
-                    # time_to_recovery_ms
-                    recovery_ms = int(
-                        (healing_state.recovery_timestamp - healing_state.fault_timestamp) * 1000
-                    )
-                    obs_recovery = await belief_service.create_observation_belief(
-                        session=session,
-                        run_id=run_id,
-                        agent_id="selfheal_agent",
-                        metric_name="time_to_recovery_ms",
-                        value=recovery_ms,
-                        unit="milliseconds",
-                        method="elapsed time from fault detection to successful repair",
-                        metric_class=MetricClass.PRIMARY,
-                        artifact_ids=artifact_refs,
-                        topic_tags=["selfhealing", "recovery"],
-                        parent_hash=last_belief_hash,
-                    )
-                    observation_ids.append(obs_recovery.id)
-                    primary_observation_ids.append(obs_recovery.id)
-                    budget.use_belief_write(1)
-                    await self._update_budget(session, run_id, budget)
-                    last_belief_hash = obs_recovery.content_hash
-
-                    # recovery_attempts
-                    obs_attempts = await belief_service.create_observation_belief(
-                        session=session,
-                        run_id=run_id,
-                        agent_id="selfheal_agent",
-                        metric_name="recovery_attempts",
-                        value=healing_state.recovery_attempts,
-                        unit="count",
-                        method="number of repair attempts before success or failure",
-                        metric_class=MetricClass.PRIMARY,
-                        artifact_ids=artifact_refs,
-                        topic_tags=["selfhealing", "attempts"],
-                        parent_hash=last_belief_hash,
-                    )
-                    observation_ids.append(obs_attempts.id)
-                    primary_observation_ids.append(obs_attempts.id)
-                    budget.use_belief_write(1)
-                    await self._update_budget(session, run_id, budget)
-                    last_belief_hash = obs_attempts.content_hash
-
-                    # regression_tests_added
-                    obs_regression = await belief_service.create_observation_belief(
-                        session=session,
-                        run_id=run_id,
-                        agent_id="selfheal_agent",
-                        metric_name="regression_tests_added",
-                        value=healing_state.regression_tests_added,
-                        unit="count",
-                        method="count of new tests generated to prevent fault recurrence",
-                        metric_class=MetricClass.PRIMARY,
-                        artifact_ids=artifact_refs,
-                        topic_tags=["selfhealing", "regression"],
-                        parent_hash=last_belief_hash,
-                    )
-                    observation_ids.append(obs_regression.id)
-                    primary_observation_ids.append(obs_regression.id)
-                    budget.use_belief_write(1)
-                    await self._update_budget(session, run_id, budget)
-                    last_belief_hash = obs_regression.content_hash
-
-                    # recurrence_rate (0 if tests pass, else estimate)
-                    recurrence = 0.0 if healing_state.regression_tests_added > 0 else 0.5
-                    obs_recurrence = await belief_service.create_observation_belief(
-                        session=session,
-                        run_id=run_id,
-                        agent_id="selfheal_agent",
-                        metric_name="recurrence_rate",
-                        value=recurrence,
-                        unit="probability",
-                        method="estimated probability of fault recurring based on regression coverage",
-                        metric_class=MetricClass.PRIMARY,
-                        artifact_ids=artifact_refs,
-                        topic_tags=["selfhealing", "recurrence"],
-                        parent_hash=last_belief_hash,
-                    )
-                    observation_ids.append(obs_recurrence.id)
-                    primary_observation_ids.append(obs_recurrence.id)
-                    budget.use_belief_write(1)
-                    await self._update_budget(session, run_id, budget)
-                    last_belief_hash = obs_recurrence.content_hash
+                # Self-healing metrics are now owned by
+                # `SelfHealingRestorer.restore_correctness`, which writes
+                # typed PRIMARY observations + an INFERENCE belief with
+                # provenance pointing at the fault fixture id. The
+                # executor's job ends at recording the observed fault
+                # effect (above); restoration is a separate phase.
 
             phases_executed.append(target_phase.value)
 
@@ -637,6 +436,7 @@ class RunExecutor:
         """parses fault injection config from run config."""
         return FaultInjectionConfig(
             enabled=raw.get("enabled", False),
+            fixture_id=raw.get("fixture_id", ""),
             scenario_id=raw.get("scenario_id", "none"),
             trigger_phase=raw.get("trigger_phase", "test"),
             trigger_condition=raw.get("trigger_condition", "always"),
@@ -648,9 +448,17 @@ class RunExecutor:
         config: FaultInjectionConfig,
         current_phase: str,
         trial_index: int,
-        rng: random.Random,
     ) -> bool:
-        """determines if fault should be injected this phase."""
+        """determines if fault should be injected this phase.
+
+        Phase 2b.1: deterministic only. ``percent_*`` triggers are gone
+        because they required RNG. Supported triggers:
+
+        * ``always``     — inject on every phase that matches
+                           ``trigger_phase``
+        * ``trial_<N>``  — inject only on the N-th trial in
+                           ``trigger_phase``
+        """
         if not config.enabled:
             return False
         if current_phase != config.trigger_phase:
@@ -659,88 +467,16 @@ class RunExecutor:
         condition = config.trigger_condition
         if condition == "always":
             return True
-        elif condition.startswith("trial_"):
+        if condition.startswith("trial_"):
             target_trial = int(condition.split("_")[1])
             return trial_index == target_trial
-        elif condition.startswith("percent_"):
-            percent = int(condition.split("_")[1])
-            return rng.randint(1, 100) <= percent
         return False
 
-    def _get_affected_components(self, scenario_id: str) -> list[str]:
-        """returns components affected by fault scenario."""
-        if scenario_id == "simple_invariant":
-            return ["artifact_store", "content_hash_validator"]
-        elif scenario_id == "intermittent_timing":
-            return ["queue_ordering", "execution_scheduler", "timing_dependent_path"]
-        return []
+    def _resolve_fault_fixture(self, fixture_id: str) -> Any | None:
+        """looks up a FaultFixture by id from the process-global registry."""
+        from ironroot.verification.fault_fixtures import get_fault_fixture_registry
 
-    def _generate_repair_action(
-        self, scenario_id: str, attempt: int, rng: random.Random
-    ) -> dict[str, Any]:
-        """generates repair action for fault scenario."""
-        if scenario_id == "simple_invariant":
-            return {
-                "action": "recompute_content_hash",
-                "target": "artifact_store",
-                "attempt": attempt + 1,
-                "timestamp": datetime.now(UTC).isoformat(),
-            }
-        elif scenario_id == "intermittent_timing":
-            actions = [
-                "add_ordering_constraint",
-                "inject_synchronization_barrier",
-                "increase_timeout_buffer",
-            ]
-            return {
-                "action": actions[attempt % len(actions)],
-                "target": "execution_scheduler",
-                "attempt": attempt + 1,
-                "timestamp": datetime.now(UTC).isoformat(),
-            }
-        return {"action": "unknown", "attempt": attempt + 1}
-
-    def _generate_regression_tests(
-        self, scenario_id: str, repair_actions: list, rng: random.Random
-    ) -> list[dict[str, Any]]:
-        """generates regression tests for fault scenario."""
-        tests = []
-        if scenario_id == "simple_invariant":
-            tests.append(
-                {
-                    "name": "test_content_hash_integrity",
-                    "type": "invariant",
-                    "target": "artifact_store",
-                    "assertion": "content_hash matches computed hash",
-                }
-            )
-        elif scenario_id == "intermittent_timing":
-            tests.append(
-                {
-                    "name": "test_queue_ordering_determinism",
-                    "type": "timing",
-                    "target": "execution_scheduler",
-                    "assertion": "queue order is deterministic with fixed seed",
-                }
-            )
-            tests.append(
-                {
-                    "name": "test_timing_barrier_effectiveness",
-                    "type": "timing",
-                    "target": "execution_scheduler",
-                    "assertion": "synchronization barrier prevents race",
-                }
-            )
-            if rng.random() < 0.5:
-                tests.append(
-                    {
-                        "name": "test_timeout_buffer_sufficiency",
-                        "type": "timing",
-                        "target": "execution_scheduler",
-                        "assertion": "timeout buffer covers worst-case latency",
-                    }
-                )
-        return tests
+        return get_fault_fixture_registry().get(fixture_id)
 
     def _generate_trace(self, seed: int) -> str:
         """generates deterministic trace hash from seed."""

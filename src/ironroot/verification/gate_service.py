@@ -6,14 +6,14 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.beliefs import get_belief_service
 from ironroot.domain.errors import GateFailed, NotFoundError
 from ironroot.domain.ids import generate_id
 from ironroot.storage.artifact_service import get_artifact_service
-from ironroot.storage.models import ArtifactRecord, GateRecord, RunRecord
+from ironroot.storage.models import ArtifactRecord, BeliefRecord, GateRecord, RunRecord
 from ironroot.verification.falsification import run_falsification
 from ironroot.verification.regression import run_regression
 from ironroot.verification.replay import compute_chain_digest
@@ -24,10 +24,29 @@ def _input_digest(payload: dict[str, Any]) -> str:
 
     Used as the GATE_RESULT belief's ``input_digest`` so re-running a
     gate against the same chain produces a stable digest the auditor
-    can compare across runs.
+    can compare across runs. ``payload`` MUST include
+    ``chain_tip_seq`` (added by the per-gate caller) so two gate
+    invocations against the same logical chain state but at different
+    chain lengths produce different digests — otherwise two clean runs
+    against an unchanged chain would emit byte-identical GATE_RESULT
+    beliefs and trip the UNIQUE(content_hash) constraint.
     """
     blob = json.dumps(payload, sort_keys=True, default=str).encode()
     return hashlib.sha256(blob).hexdigest()
+
+
+async def _chain_tip_seq(session: AsyncSession, run_id: str) -> int:
+    """returns the highest seq currently in the chain for ``run_id``.
+
+    Used as a tie-breaker in gate input digests so successive gate
+    invocations against the same logical state still produce distinct
+    GATE_RESULT belief content hashes.
+    """
+    result = await session.execute(
+        select(func.max(BeliefRecord.seq)).where(BeliefRecord.run_id == run_id)
+    )
+    value = result.scalar()
+    return int(value) if value is not None else 0
 
 
 class GateService:
@@ -196,12 +215,16 @@ class GateService:
             }
 
         passed_value = bool(decision["passed"])
+        chain_tip = await _chain_tip_seq(session, run_id)
+        replay_input_digest = _input_digest(
+            {"live_digest": live_digest, "chain_tip_seq": chain_tip}
+        )
         belief_id = await self._append_gate_belief(
             session=session,
             run_id=run_id,
             gate_name="replay",
             passed=passed_value,
-            input_digest=live_digest,
+            input_digest=replay_input_digest,
             decision_details=decision,
         )
         decision["gate_result_belief_id"] = belief_id
@@ -233,7 +256,11 @@ class GateService:
             "details": "" if all_valid else f"integrity failed for: {failures}",
         }
 
-        input_payload = {"artifact_ids": [a.id for a in artifacts]}
+        chain_tip = await _chain_tip_seq(session, run_id)
+        input_payload = {
+            "artifact_ids": [a.id for a in artifacts],
+            "chain_tip_seq": chain_tip,
+        }
         belief_id = await self._append_gate_belief(
             session=session,
             run_id=run_id,
@@ -319,10 +346,12 @@ class GateService:
             "details": "" if all_valid else "; ".join(v["details"] for v in violations),
         }
 
+        chain_tip = await _chain_tip_seq(session, run_id)
         input_payload = {
             "chain_valid": chain_valid,
             "state_valid": state_valid,
             "budget_valid": budget_valid,
+            "chain_tip_seq": chain_tip,
         }
         gate_belief_id = await self._append_gate_belief(
             session=session,
@@ -375,10 +404,12 @@ class GateService:
             )
         )
 
+        chain_tip = await _chain_tip_seq(session, run_id)
         input_payload = {
             "suite_name": report.suite_name,
             "run_kind": report.run_kind,
             "check_names": [r.check_name for r in report.results],
+            "chain_tip_seq": chain_tip,
         }
         offending_belief_ids: list[str] = []
         for r in report.results:
@@ -437,7 +468,11 @@ class GateService:
             offending_belief_ids.extend(a.evidence.offending_belief_ids)
             offending_artifact_ids.extend(a.evidence.offending_artifact_ids)
 
-        input_payload = {"claim_names": [a.claim_name for a in report.attempts]}
+        chain_tip = await _chain_tip_seq(session, run_id)
+        input_payload = {
+            "claim_names": [a.claim_name for a in report.attempts],
+            "chain_tip_seq": chain_tip,
+        }
         belief_id = await self._append_gate_belief(
             session=session,
             run_id=run_id,
@@ -450,6 +485,30 @@ class GateService:
         )
         decision["gate_result_belief_id"] = belief_id
         return decision
+
+    async def reseal_replay_baseline(self, session: AsyncSession, run_id: str) -> str:
+        """forces a re-seal of the replay digest baseline.
+
+        Used after an intentional, audited mutation of the chain (e.g.,
+        a self-healing restoration that wrote observation/inference
+        beliefs). Without this, the replay gate would treat the new
+        rows as drift and report ``passed=False`` forever.
+
+        Returns the freshly sealed digest. This is a tamper-class event
+        for audit purposes — every caller should justify why they're
+        bypassing the original baseline.
+        """
+        new_digest = await compute_chain_digest(session, run_id)
+        await session.execute(
+            update(RunRecord)
+            .where(RunRecord.id == run_id)
+            .values(
+                replay_digest=new_digest,
+                replay_digest_sealed_at=datetime.now(UTC),
+            )
+        )
+        await session.flush()
+        return new_digest
 
     async def get_gate_status(self, session: AsyncSession, run_id: str) -> dict[str, Any]:
         """gets the latest gate status for a run."""
