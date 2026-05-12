@@ -38,12 +38,15 @@ def create_app() -> FastAPI:
         redoc_url="/redoc" if settings.debug else None,
     )
 
+    # CORS: explicit localhost set in debug, settings-driven allowlist in
+    # production. Never `["*"]` together with allow_credentials=True — that
+    # combination is rejected by the browser fetch spec.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"] if settings.debug else [],
+        allow_origins=settings.cors_allowed_origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
     )
 
     app.include_router(api_router, prefix="/api/v1")
