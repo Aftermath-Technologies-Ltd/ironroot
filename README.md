@@ -26,14 +26,33 @@ internal research.
 - `src/ironroot/verification/` — `integrity.py`, `replay.py`,
   `regression_gate.py`, `falsification.py`, `gate_service.py`. These define
   the gates a candidate change must pass before it is allowed to mutate state.
-- `src/ironroot/api/`, `src/ironroot/orchestration/`, `src/ironroot/agents/`,
-  `src/ironroot/llm/`, `src/ironroot/research/`, `src/ironroot/agi/`,
-  `src/ironroot/cognition/strategies/`, `src/ironroot/cognition/planning/`,
-  `src/ironroot/world_models/`, `src/ironroot/evolution/`,
-  `src/ironroot/healing/` — research subsystems built on top of the integrity
-  core. They are intentionally not described here.
-- `src/ironroot/ui_backend/` — WebSocket event bridge. It has no current
-  consumer (the previous React UI has been removed). Retained for future use.
+- `src/ironroot/api/`, `src/ironroot/llm/` — HTTP surface and LLM-adapter
+  primitives. Held to integrity-core rules.
+- `src/ironroot/orchestration/` — run lifecycle wiring. The executor module
+  (`orchestration/executor.py`) is quarantined as experimental; the rest is
+  in scope of the integrity surface (see Phase 3 of `upgrade-plan.md`).
+- **Experimental** subsystems live under the
+  `ironroot.experimental.*` quarantine: `agents/`, `agi/`,
+  `cognition.strategies/`, `cognition.planning/`, `evolution/`, `healing/`,
+  `orchestration.executor`, `reality/`, `research/`, `world_models/`,
+  `battery/`, `capabilities/`, and `ui_backend/`. See `EXPERIMENTAL.md` for
+  the honest one-line description of each, and `src/ironroot/experimental/`
+  for the authoritative manifest used by CI.
+
+## Integrity core vs experimental — the split that matters
+
+The integrity core (≈1k LOC) is the only part of this repository that the
+project actually claims correctness for. The experimental subsystems (≈14k
+LOC of agents, AGI suites, evolution, self-healing scaffolding, world
+models, research generators) are RNG-driven simulations or partial stubs.
+Treat them as research code, not product. They are forbidden from writing
+`MetricClass.PRIMARY` beliefs and from being cited as evidence of any
+production claim.
+
+The manifest in `src/ironroot/experimental/__init__.py::EXPERIMENTAL_MODULE_PREFIXES`
+is the single source of truth for what is and isn't experimental. The CI
+grep guard reads from it to enforce the `no random.* outside experimental`
+rule.
 
 ## Integrity guarantees
 

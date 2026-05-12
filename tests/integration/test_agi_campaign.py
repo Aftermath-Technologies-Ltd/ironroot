@@ -1,14 +1,21 @@
 # Author: Bradley R. Kinnard
-"""AGI 5/5 Campaign - Complete Integration Test.
+"""Experimental "AGI suite" integration test.
 
-A single "AGI claim campaign" that includes:
-- 12 reality sources
-- 3 long-horizon environments
-- 5 tool onboarding tasks
-- 30-day sustained improvement run (or equivalent)
-- adversarial suite
-- zero-shot and few-shot transfer gates
-- all artifacts and ledgers logged with hashes
+This is the end-to-end harness for the (experimental, RNG-driven) `agi/`
+subsystem. It exercises:
+
+- 12 simulated "reality sources" (RNG fixtures, not external IO)
+- 3 long-horizon agent environments (RNG simulators)
+- 5 tool-onboarding tasks (RNG-scored)
+- a sustained-improvement run (RNG-scored)
+- an adversarial-attack suite (RNG-scored)
+- zero-shot and few-shot transfer gates (RNG-scored)
+
+These scores are NOT evidence of AGI behaviour. The previous "AGI 5/5
+campaign FULLY PASSING" framing was overselling and has been removed
+(see EXPERIMENTAL.md). What this test actually verifies is that the
+RNG-driven `agi/` modules wire together, write artifacts, and produce
+deterministic outputs under a fixed seed.
 """
 
 import asyncio
@@ -545,7 +552,7 @@ async def run_phase_6_adversarial(
 
 
 async def run_full_campaign(seed: int = 42) -> CampaignManifest:
-    """Run the complete 5/5 AGI campaign."""
+    """Run the experimental agi-suite integration harness."""
     # Reset all singletons to fresh state
     reset_singletons()
 
@@ -554,7 +561,7 @@ async def run_full_campaign(seed: int = 42) -> CampaignManifest:
     started_at = datetime.now(timezone.utc).isoformat()
 
     print("\n" + "=" * 80)
-    print("AGI 5/5 CAMPAIGN")
+    print("EXPERIMENTAL: agi-suite integration harness")
     print(f"Campaign ID: {campaign_id}")
     print(f"Seed: {seed}")
     print(f"Started: {started_at}")
@@ -607,8 +614,10 @@ async def run_full_campaign(seed: int = 42) -> CampaignManifest:
     gates_total = len(all_results)
     final_score = statistics.mean(r.score for r in all_results)
 
-    # AGI claim valid if all core gates pass
-    agi_claim_valid = gates_passed >= 5  # Allow 1 failure
+    # NOTE: this is an internal wiring check, NOT evidence of AGI behaviour.
+    # Renamed from "agi_claim_valid" — see EXPERIMENTAL.md for the policy.
+    agi_suite_wiring_intact = gates_passed >= 5  # Allow 1 failure
+    agi_claim_valid = agi_suite_wiring_intact  # back-compat alias for downstream
 
     manifest = CampaignManifest(
         campaign_id=campaign_id,
