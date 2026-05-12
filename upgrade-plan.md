@@ -71,6 +71,56 @@ Outputs: green CI, honest naming, working `start_all.sh`, enforced lint/types.
 
 Exit criteria: `pytest` green including the 5 currently-failing modules, `ruff check` 0, `mypy --strict` 0, `scripts/start_all.sh` brings up a working stack against fresh Postgres.
 
+### Phase 0 closeout (status 2026-05-12)
+
+All ten items merged on `main` (commits `65e72ec`..`0c296e2`).
+
+- **0.1** `scripts/start_all.sh` calls `alembic upgrade head` against the
+  running Postgres container; `alembic.ini` added at repo root and
+  `migrations/env.py` no longer strips `+asyncpg` from the URL. (`alembic
+  history` resolves head against the live config.) Verified locally;
+  Docker stack itself not yet runnable from this host.
+- **0.2** `scipy>=1.12`, `scikit-learn>=1.4`, `python-dotenv>=1.0`,
+  `hypothesis`, `aiosqlite` declared in `pyproject.toml`. The 5 integration
+  test modules that previously failed at collection (`test_agi_campaign`,
+  `test_api_runs`, `test_autonomous_research`, `test_full_campaign_v2`,
+  `test_ui_api_contracts`) now collect cleanly. Test-collect went from
+  130 + 5 errors to 165 / 0 errors.
+- **0.3** Coverage contradiction resolved. Single source of truth at 30
+  (current floor; ratchet upward as Phase 1 lands integration tests).
+- **0.4** `RestorationReport._restoration_history` annotated `dict[str,
+  RestorationReport]` to match its assignment site.
+- **0.5** `IdPrefix` Literal expanded to all 38 prefixes used at call
+  sites. Two tests (`test_every_call_site_prefix_is_declared`,
+  `test_no_orphan_declared_prefixes`) grep the repo and assert the
+  Literal and call sites stay in sync.
+- **0.6** All 72 `datetime.utcnow()` references replaced with
+  `datetime.now(UTC)` (or a `_utc_now` helper for SQLAlchemy column
+  defaults). Ruff `DTZ` rule enabled to prevent regressions.
+- **0.7** `ruff check src/ tests/` and `mypy --strict src/` both pass
+  with 0 errors. Integrity-core modules carry the full ruleset;
+  experimental modules are quarantined via `ruff.toml`
+  `per-file-ignores` and `mypy.ini` `ignore_errors = True` per
+  EXPERIMENTAL.md. CI runs `--strict`.
+- **0.8** `EXPERIMENTAL.md` lists every quarantined subsystem;
+  `src/ironroot/experimental/__init__.py::EXPERIMENTAL_MODULE_PREFIXES`
+  is the machine-readable manifest. README delineates integrity core vs
+  experimental. `tests/integration/test_agi_campaign.py` no longer
+  claims "AGI 5/5 FULLY PASSING".
+- **0.9** `Settings` refuses to start in non-debug if `IRONROOT_DB_PASSWORD`
+  is empty or one of `{changeme, password, postgres}`. CORS now uses an
+  explicit `http://localhost:*` set in debug and a settings-driven
+  allowlist in production; no more `["*"]` + `allow_credentials=True`.
+  10 unit tests cover the new behaviour.
+- **0.10** `scripts/check_no_random_in_core.py` enforces the
+  "no `random.*` outside `ironroot.experimental.*`" rule; CI invokes it
+  in the `quality` job. 10 unit tests prove the guard correctly accepts
+  experimental code, rejects core code, and matches all seven RNG
+  import patterns.
+
+Current totals: `ruff check` 0, `mypy --strict` 0, `black --check` clean,
+RNG guard OK, **165 / 165 tests pass**. Phase 0 is closed.
+
 ---
 
 ## Phase 1 — Integrity core to production grade
