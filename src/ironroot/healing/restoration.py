@@ -101,10 +101,10 @@ class SelfHealingRestorer:
     MAX_RESTORATION_ATTEMPTS = 5
     RECURRENCE_CHECK_COUNT = 10
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._artifact_service = get_artifact_service()
         self._violations: dict[str, InvariantViolation] = {}
-        self._restoration_history: list[RestorationReport] = {}
+        self._restoration_history: dict[str, RestorationReport] = {}
         self._regression_tests: list[Callable[[], bool]] = []
 
     def register_invariant_violation(

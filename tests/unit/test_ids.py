@@ -1,7 +1,35 @@
 # Author: Bradley R. Kinnard
 """unit tests for id generation and hashing."""
 
-from ironroot.domain.ids import generate_id, hash_content, verify_hash
+from __future__ import annotations
+
+import re
+import typing
+from pathlib import Path
+
+import pytest
+
+from ironroot.domain.ids import IdPrefix, generate_id, hash_content, verify_hash
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_SCAN_DIRS = (_REPO_ROOT / "src" / "ironroot", _REPO_ROOT / "tests")
+_CALL_RE = re.compile(r"""generate_id\(\s*["']([a-z][a-z0-9_]*)["']\s*\)""")
+
+
+def _declared_prefixes() -> set[str]:
+    return set(typing.get_args(IdPrefix))
+
+
+def _call_site_prefixes() -> set[str]:
+    found: set[str] = set()
+    for root in _SCAN_DIRS:
+        for path in root.rglob("*.py"):
+            if "__pycache__" in path.parts:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            for match in _CALL_RE.finditer(text):
+                found.add(match.group(1))
+    return found
 
 
 class TestGenerateId:
@@ -19,10 +47,41 @@ class TestGenerateId:
 
     def test_all_prefixes_work(self) -> None:
         """all valid prefixes produce valid ids."""
-        prefixes = ["run", "agt", "bel", "art", "str", "inc", "gat"]
+        prefixes = ["run", "bel", "art", "str", "inc", "gat"]
         for prefix in prefixes:
             result = generate_id(prefix)  # type: ignore[arg-type]
             assert result.startswith(f"{prefix}_")
+
+    def test_invalid_prefix_rejected_at_runtime(self) -> None:
+        """generate_id raises on prefixes that don't match the format."""
+        with pytest.raises(ValueError):
+            generate_id("UPPER")  # type: ignore[arg-type]
+        with pytest.raises(ValueError):
+            generate_id("")  # type: ignore[arg-type]
+
+
+class TestPrefixDeclarations:
+    """asserts every prefix used in the repo is declared in the Literal."""
+
+    def test_every_call_site_prefix_is_declared(self) -> None:
+        declared = _declared_prefixes()
+        used = _call_site_prefixes()
+        undeclared = used - declared
+        assert not undeclared, (
+            f"these prefixes are passed to generate_id() but not declared "
+            f"in IdPrefix: {sorted(undeclared)}. Add them to "
+            f"src/ironroot/domain/ids.py::IdPrefix."
+        )
+
+    def test_no_orphan_declared_prefixes(self) -> None:
+        """declared prefixes that are nowhere called should be removed."""
+        declared = _declared_prefixes()
+        used = _call_site_prefixes()
+        orphans = declared - used
+        assert not orphans, (
+            f"these prefixes are declared in IdPrefix but never used; "
+            f"remove them: {sorted(orphans)}"
+        )
 
 
 class TestHashing:
