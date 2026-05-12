@@ -14,7 +14,7 @@ class TestArtifactStorage:
     """integration tests for artifact store."""
 
     def test_full_lifecycle(self) -> None:
-        """store, retrieve, verify, delete lifecycle."""
+        """store, retrieve, verify lifecycle (no public delete after Phase 1.4)."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = ArtifactStore(Path(tmpdir))
 
@@ -32,9 +32,8 @@ class TestArtifactStorage:
             # verify
             assert store.verify(content_hash)
 
-            # delete
-            assert store.delete(content_hash)
-            assert not store.exists(content_hash)
+            # Public delete is gone (Phase 1.4: write-once enforcement).
+            assert not hasattr(store, "delete")
 
     def test_write_once_semantics(self) -> None:
         """writing same content twice is idempotent."""

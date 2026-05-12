@@ -96,19 +96,66 @@ class TestArtifactStoreIntegrity:
             content_hash = store.store(b"test")
             assert store.exists(content_hash)
 
-    def test_delete(self) -> None:
-        """delete removes artifact."""
+    def test_public_delete_removed(self) -> None:
+        """Phase 1.4: public delete() is no longer part of the API."""
         with tempfile.TemporaryDirectory() as tmpdir:
             store = ArtifactStore(Path(tmpdir))
-            content_hash = store.store(b"to delete")
+            assert not hasattr(store, "delete"), (
+                "ArtifactStore.delete must be removed to preserve write-once. "
+                "Use _unsafe_delete from a retention job if absolutely "
+                "necessary."
+            )
 
+    def test_unsafe_delete_requires_explicit_consent(self) -> None:
+        """_unsafe_delete refuses without the safety kwargs."""
+        import pytest
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = ArtifactStore(Path(tmpdir))
+            content_hash = store.store(b"do not delete me casually")
+
+            # Without the consent kwarg, refuses.
+            with pytest.raises(PermissionError):
+                store._unsafe_delete(  # type: ignore[call-arg]
+                    content_hash, reason="cleanup", operator="ops_bot"
+                )
+
+            # With consent but empty reason/operator: refuses.
+            with pytest.raises(ValueError):
+                store._unsafe_delete(
+                    content_hash,
+                    reason="",
+                    operator="ops_bot",
+                    i_understand_this_violates_write_once=True,
+                )
             assert store.exists(content_hash)
-            assert store.delete(content_hash)
+
+            # Full required signature succeeds.
+            assert store._unsafe_delete(
+                content_hash,
+                reason="retention-job: orphaned upload, no DB row",
+                operator="ops_bot",
+                i_understand_this_violates_write_once=True,
+            )
             assert not store.exists(content_hash)
 
-    def test_delete_nonexistent(self) -> None:
-        """delete returns false for nonexistent artifact."""
+    def test_unsafe_delete_logs_tamper_event(self, caplog) -> None:  # type: ignore[no-untyped-def]
+        """every _unsafe_delete call emits a WARNING with event=tamper."""
+        import logging
+
         with tempfile.TemporaryDirectory() as tmpdir:
             store = ArtifactStore(Path(tmpdir))
-
-            assert not store.delete("nonexistent")
+            content_hash = store.store(b"watch this")
+            caplog.set_level(logging.WARNING, logger="ironroot.storage.artifacts")
+            store._unsafe_delete(
+                content_hash,
+                reason="orphan cleanup",
+                operator="ops_bot",
+                i_understand_this_violates_write_once=True,
+            )
+            tamper_records = [
+                r for r in caplog.records if getattr(r, "event", None) == "tamper"
+            ]
+            assert tamper_records, "expected a tamper-class log entry"
+            assert tamper_records[0].levelno == logging.WARNING
+            assert getattr(tamper_records[0], "operator", "") == "ops_bot"

@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -21,6 +22,12 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ironroot.storage.postgres import Base
+
+# Production runs against PostgreSQL (JSONB for indexable JSON columns).
+# Integrity tests use aiosqlite, which has no JSONB; the variant falls back
+# to the generic SQLAlchemy JSON type there. The migration still emits JSONB
+# because Alembic targets the live PG database.
+JsonCol = JSONB().with_variant(JSON(), "sqlite")
 
 
 def _utc_now() -> datetime:
@@ -57,7 +64,7 @@ class RunRecord(Base):
     seed: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     phase: Mapped[str] = mapped_column(String(20), nullable=False)
-    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JsonCol, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utc_now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -97,10 +104,10 @@ class BeliefRecord(Base):
     )  # lifecycle, observation, hypothesis, prediction, gate_result, violation
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     parent_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    content: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    content: Mapped[dict[str, Any]] = mapped_column(JsonCol, nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
-    evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    topic_tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    evidence_ids: Mapped[list[str]] = mapped_column(JsonCol, nullable=False, default=list)
+    topic_tags: Mapped[list[str]] = mapped_column(JsonCol, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utc_now)
 
     run: Mapped["RunRecord"] = relationship(back_populates="beliefs")
@@ -160,8 +167,8 @@ class AgentRecord(Base):
 
     # penalties
     penalty_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    tools_revoked: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    restricted_tasks: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    tools_revoked: Mapped[list[str]] = mapped_column(JsonCol, nullable=False, default=list)
+    restricted_tasks: Mapped[list[str]] = mapped_column(JsonCol, nullable=False, default=list)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utc_now)
     terminated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -178,7 +185,7 @@ class StrategyRecord(Base):
     name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
     version: Mapped[str] = mapped_column(String(20), nullable=False)
     manifest_hash: Mapped[str] = mapped_column(String(64), nullable=False)
-    manifest: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    manifest: Mapped[dict[str, Any]] = mapped_column(JsonCol, nullable=False)
 
     # status
     gate_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -209,8 +216,8 @@ class IncidentRecord(Base):
     incident_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    penalties_applied: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    evidence_ids: Mapped[list[str]] = mapped_column(JsonCol, nullable=False, default=list)
+    penalties_applied: Mapped[dict[str, Any]] = mapped_column(JsonCol, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utc_now)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
@@ -229,7 +236,7 @@ class GateRecord(Base):
     gate_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
     passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
     artifact_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    results: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    results: Mapped[dict[str, Any]] = mapped_column(JsonCol, nullable=False)
     executed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utc_now)
 
     run: Mapped["RunRecord"] = relationship(back_populates="gates")

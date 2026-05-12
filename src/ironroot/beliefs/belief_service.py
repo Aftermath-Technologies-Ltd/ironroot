@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import func, select, text, update
+from sqlalchemy import event, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.domain.errors import ImmutabilityViolation, InvariantViolation
@@ -194,8 +194,14 @@ class BeliefService:
     """
 
     def __init__(self) -> None:
-        self._in_process_locks: dict[tuple[int, str], asyncio.Lock] = {}
-        self._locks_guard = asyncio.Lock()
+        # Per (bind_id, run_id) lock shared across sessions.
+        self._chain_locks: dict[tuple[int, str], asyncio.Lock] = {}
+        self._chain_locks_guard = asyncio.Lock()
+        # Re-entry tracking: which (sync_session_id, run_id) pairs are
+        # currently holding which lock. Releasing is idempotent and tied
+        # to the session's transaction commit/rollback, not the
+        # _chain_lock context-manager exit.
+        self._session_holders: dict[tuple[int, str], asyncio.Lock] = {}
 
     async def create_lifecycle_belief(
         self,
@@ -700,7 +706,13 @@ class BeliefService:
         contend.
 
         Non-Postgres (SQLite/tests): process-level `asyncio.Lock` keyed by
-        `(engine_id, run_id)`. Sufficient for in-process concurrency tests.
+        `(engine_id, run_id)`. The lock is acquired here but RELEASED on
+        the session's `after_commit` / `after_rollback` event — held past
+        the context-manager exit so the next session waiting on the same
+        chain sees the committed row, matching the Postgres semantics
+        exactly. Re-entry within the same session is a no-op so callers
+        can append several beliefs to the same chain inside one
+        transaction without deadlocking.
         """
         bind = session.bind
         dialect = bind.dialect.name if bind is not None else ""
@@ -711,11 +723,53 @@ class BeliefService:
             yield
             return
 
+        sync_session = session.sync_session
+        sess_id = id(sync_session)
         bind_key = id(bind)
-        async with self._locks_guard:
-            lock = self._in_process_locks.setdefault((bind_key, run_id), asyncio.Lock())
-        async with lock:
+        chain_key = (bind_key, run_id)
+        holder_key = (sess_id, run_id)
+
+        # Re-entry within same session: lock already held, no-op.
+        if holder_key in self._session_holders:
             yield
+            return
+
+        async with self._chain_locks_guard:
+            lock = self._chain_locks.setdefault(chain_key, asyncio.Lock())
+
+        await lock.acquire()
+        self._session_holders[holder_key] = lock
+
+        released = False
+
+        def _release(*_args: Any, **_kwargs: Any) -> None:
+            nonlocal released
+            if released:
+                return
+            released = True
+            self._session_holders.pop(holder_key, None)
+            try:
+                lock.release()
+            except RuntimeError:
+                # already released — defensive only
+                pass
+            # Listeners stay registered on the sync_session for its
+            # lifetime; the ``released`` flag short-circuits any
+            # subsequent firing. We deliberately do NOT call
+            # ``event.remove`` here because the dispatch is currently
+            # iterating over the listener deque.
+
+        event.listen(sync_session, "after_commit", _release)
+        event.listen(sync_session, "after_rollback", _release)
+        event.listen(sync_session, "after_soft_rollback", _release)
+
+        try:
+            yield
+        except BaseException:
+            # If the caller errors out before committing, release immediately
+            # so other appenders aren't blocked indefinitely.
+            _release()
+            raise
 
     async def _get_chain_tip_locked(
         self, session: AsyncSession, run_id: str

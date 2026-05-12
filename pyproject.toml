@@ -51,6 +51,7 @@ dev = [
     "httpx>=0.26.0",
     "hypothesis>=6.100.0",
     "aiosqlite>=0.20.0",
+    "greenlet>=3.0.0",
 ]
 
 [project.scripts]
@@ -77,6 +78,7 @@ markers = [
     "unit: unit tests",
     "integration: integration tests",
     "e2e: end-to-end tests",
+    "integrity: Phase 1 adversarial integrity tests",
 ]
 
 [tool.coverage.run]
