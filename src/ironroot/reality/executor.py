@@ -3,7 +3,7 @@
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import update
@@ -160,7 +160,7 @@ class RealityFalsificationExecutor:
             session=session,
             data=json.dumps({
                 "observations": [o.to_dict() for o in observations],
-                "acquisition_timestamp": datetime.utcnow().isoformat(),
+                "acquisition_timestamp": datetime.now(UTC).isoformat(),
             }).encode(),
             artifact_type="reality_observations",
             created_by="reality_interface",
@@ -244,7 +244,7 @@ class RealityFalsificationExecutor:
                     }
                     for r in results
                 ],
-                "evaluated_at": datetime.utcnow().isoformat(),
+                "evaluated_at": datetime.now(UTC).isoformat(),
             }).encode(),
             artifact_type="contradiction_report",
             created_by="reality_interface",

@@ -1,7 +1,7 @@
 # Author: Bradley R. Kinnard
 """sqlalchemy models for all database tables."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import (
@@ -33,7 +33,7 @@ class ArtifactRecord(Base):
     created_by: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
 
     __table_args__ = (
         Index("ix_artifacts_type_created", "artifact_type", "created_at"),
@@ -51,7 +51,7 @@ class RunRecord(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
     phase: Mapped[str] = mapped_column(String(20), nullable=False)
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     failure_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -86,7 +86,7 @@ class BeliefRecord(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     topic_tags: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
 
     run: Mapped["RunRecord"] = relationship(back_populates="beliefs")
     contradictions: Mapped[list["ContradictionRecord"]] = relationship(
@@ -110,7 +110,7 @@ class ContradictionRecord(Base):
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     detected_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=lambda: datetime.now(UTC)
     )
 
     belief: Mapped["BeliefRecord"] = relationship(
@@ -142,7 +142,7 @@ class AgentRecord(Base):
     tools_revoked: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     restricted_tasks: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     terminated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     run: Mapped["RunRecord"] = relationship(back_populates="agents")
@@ -170,7 +170,7 @@ class StrategyRecord(Base):
     efficiency_score: Mapped[float | None] = mapped_column(Float, nullable=True)
     safety_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
 
     __table_args__ = (UniqueConstraint("name", "version", name="uq_strategies_name_version"),)
 
@@ -190,7 +190,7 @@ class IncidentRecord(Base):
     description: Mapped[str] = mapped_column(Text, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     penalties_applied: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(UTC))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     run: Mapped["RunRecord"] = relationship(back_populates="incidents")
@@ -210,7 +210,7 @@ class GateRecord(Base):
     artifact_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     results: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     executed_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, default=datetime.utcnow
+        DateTime, nullable=False, default=lambda: datetime.now(UTC)
     )
 
     run: Mapped["RunRecord"] = relationship(back_populates="gates")

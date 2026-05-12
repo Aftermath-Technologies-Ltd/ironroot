@@ -2,7 +2,7 @@
 """strategy service layer with gate-blocked promotion."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, update
@@ -39,7 +39,7 @@ class StrategyService:
             manifest=manifest,
             gate_passed=False,
             promoted=False,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         session.add(record)
@@ -129,7 +129,7 @@ class StrategyService:
         await session.execute(
             update(StrategyRecord)
             .where(StrategyRecord.id == strategy_id)
-            .values(promoted=True, promoted_at=datetime.utcnow())
+            .values(promoted=True, promoted_at=datetime.now(UTC))
         )
 
         return await self.get_strategy(session, strategy_id)  # type: ignore

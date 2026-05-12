@@ -11,7 +11,7 @@ Each capability has:
 
 import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Callable
 
@@ -355,7 +355,7 @@ class CapabilityRegistry:
             passed=passed,
             failure_modes_triggered=failure_modes_triggered,
             artifacts_produced=artifacts_produced,
-            attempted_at=datetime.utcnow().isoformat(),
+            attempted_at=datetime.now(UTC).isoformat(),
         )
 
         record.attempts.append(attempt)

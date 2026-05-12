@@ -1,7 +1,7 @@
 # Author: Bradley R. Kinnard
 """run service layer for lifecycle management."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, update
@@ -32,7 +32,7 @@ class RunService:
             status="pending",
             phase=RunPhase.INIT.value,
             config=config,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
             steps_used=0,
             tool_calls_used=0,
             belief_writes_used=0,
@@ -67,7 +67,7 @@ class RunService:
             .values(
                 status="running",
                 phase=supervisor.phase.value,
-                started_at=datetime.utcnow(),
+                started_at=datetime.now(UTC),
             )
         )
 
@@ -109,7 +109,7 @@ class RunService:
             .values(
                 status="stopped",
                 phase=supervisor.phase.value,
-                finished_at=datetime.utcnow(),
+                finished_at=datetime.now(UTC),
                 failure_reason=reason,
             )
         )
@@ -132,7 +132,7 @@ class RunService:
             .values(
                 status="failed",
                 phase=supervisor.phase.value,
-                finished_at=datetime.utcnow(),
+                finished_at=datetime.now(UTC),
                 failure_reason=reason,
             )
         )
@@ -155,7 +155,7 @@ class RunService:
             .values(
                 status="completed",
                 phase=supervisor.phase.value,
-                finished_at=datetime.utcnow(),
+                finished_at=datetime.now(UTC),
             )
         )
 

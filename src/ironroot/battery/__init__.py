@@ -16,7 +16,7 @@ import random
 import statistics
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Callable
 
@@ -428,7 +428,7 @@ class GeneralIntelligenceBattery:
                 score=score,
                 correct=correct,
                 latency_ms=latency_ms,
-                evaluated_at=datetime.utcnow().isoformat(),
+                evaluated_at=datetime.now(UTC).isoformat(),
             ))
 
         # compute aggregate metrics
@@ -469,7 +469,7 @@ class GeneralIntelligenceBattery:
             all_results=results,
             input_hashes=[i.input_hash for i in instances],
             ground_truth_hashes=[i.ground_truth_hash for i in instances],
-            evaluated_at=datetime.utcnow().isoformat(),
+            evaluated_at=datetime.now(UTC).isoformat(),
         )
 
         # store battery result artifact

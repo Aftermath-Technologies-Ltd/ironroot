@@ -6,7 +6,7 @@ Supports multiple public datasets with hidden holdout splits.
 
 import random
 import statistics
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -91,7 +91,7 @@ class TabularDatasetSource(RealitySource):
             "holdout_fraction": self._holdout_fraction,
             "seed": self._seed,
             "metrics_available": self.get_predictable_metrics(),
-            "contract_timestamp": datetime.utcnow().isoformat(),
+            "contract_timestamp": datetime.now(UTC).isoformat(),
         }
 
     async def acquire_observations(self) -> list[ExternalObservation]:
@@ -108,7 +108,7 @@ class TabularDatasetSource(RealitySource):
             raw_data = self._get_fallback_data()
 
         data_hash = self.compute_hash(raw_data)
-        acquisition_time = datetime.utcnow().isoformat()
+        acquisition_time = datetime.now(UTC).isoformat()
 
         # parse and compute holdout metrics
         metrics = self._compute_holdout_metrics(raw_data)

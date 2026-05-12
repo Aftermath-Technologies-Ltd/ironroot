@@ -6,7 +6,7 @@ Uses real financial/weather data where future values are genuinely unknown at pr
 
 import random
 import statistics
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -75,7 +75,7 @@ class TimeSeriesSource(RealitySource):
             "forecast_horizon": self._forecast_horizon,
             "seed": self._seed,
             "metrics_available": self.get_predictable_metrics(),
-            "contract_timestamp": datetime.utcnow().isoformat(),
+            "contract_timestamp": datetime.now(UTC).isoformat(),
         }
 
     def get_past_window(self) -> list[float]:
@@ -92,7 +92,7 @@ class TimeSeriesSource(RealitySource):
         if not self._past_data:
             self._generate_data()
 
-        acquisition_time = datetime.utcnow().isoformat()
+        acquisition_time = datetime.now(UTC).isoformat()
 
         # compute hash of full series
         full_series = self._past_data + self._future_data

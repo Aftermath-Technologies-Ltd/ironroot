@@ -1,7 +1,7 @@
 # Author: Bradley R. Kinnard
 """self-healing pipeline: containment, rollback, repair, retest."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, update
@@ -45,7 +45,7 @@ class HealingPipeline:
             description=description,
             evidence_ids=evidence_ids or [],
             penalties_applied={},
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         session.add(record)
@@ -234,7 +234,7 @@ class HealingPipeline:
         await session.execute(
             update(IncidentRecord)
             .where(IncidentRecord.id == incident_id)
-            .values(resolved_at=datetime.utcnow())
+            .values(resolved_at=datetime.now(UTC))
         )
 
         # refetch

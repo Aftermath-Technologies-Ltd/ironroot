@@ -21,7 +21,7 @@ import random
 import statistics
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -120,7 +120,7 @@ class FullCampaignTest:
 
     async def run_campaign(self) -> CampaignResult:
         """Execute the full campaign."""
-        started_at = datetime.utcnow().isoformat()
+        started_at = datetime.now(UTC).isoformat()
 
         # get git commit
         try:
@@ -159,7 +159,7 @@ class FullCampaignTest:
 
             await session.commit()
 
-        completed_at = datetime.utcnow().isoformat()
+        completed_at = datetime.now(UTC).isoformat()
 
         # count outcomes
         caps_passed = sum(
@@ -204,7 +204,7 @@ class FullCampaignTest:
                 "gate_schema": hashlib.sha256(b"gate_schema_v1").hexdigest()[:16],
             },
             "reality_sources": [],
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
         }
 
         # add reality sources
@@ -310,9 +310,9 @@ class FullCampaignTest:
 
     async def _create_reality_proof(self, session: AsyncSession, run_id: str, source) -> dict:
         """Create reality proof bundle."""
-        lock_time = datetime.utcnow().isoformat()
+        lock_time = datetime.now(UTC).isoformat()
         await asyncio.sleep(0.01)  # ensure ordering
-        acquisition_time = datetime.utcnow().isoformat()
+        acquisition_time = datetime.now(UTC).isoformat()
 
         observations = await source.acquire_observations()
         data_hash = observations[0].provenance.data_hash if observations else "none"

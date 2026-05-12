@@ -12,7 +12,7 @@ import hashlib
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -217,7 +217,7 @@ class SimpleCausalModel(WorldModel):
             domain=self._domain,
             structure=self._structure,
             training_data_hash=training_data_hash,
-            created_at=datetime.utcnow().isoformat(),
+            created_at=datetime.now(UTC).isoformat(),
         )
 
 
@@ -249,7 +249,7 @@ class WorldModelRegistry:
                 domain="unknown",
                 structure={},
                 training_data_hash=data_hash,
-                created_at=datetime.utcnow().isoformat(),
+                created_at=datetime.now(UTC).isoformat(),
             )
 
         self._models[model.model_id] = model
@@ -320,7 +320,7 @@ class WorldModelRegistry:
             causal_consistency_score=consistency_checks / num_tested if num_tested else 0.0,
             num_queries_tested=num_tested,
             failed_queries=failed_queries,
-            evaluated_at=datetime.utcnow().isoformat(),
+            evaluated_at=datetime.now(UTC).isoformat(),
         )
 
         self._evaluations[model_id] = report

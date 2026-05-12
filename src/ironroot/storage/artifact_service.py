@@ -1,7 +1,7 @@
 # Author: Bradley R. Kinnard
 """artifact service layer combining storage and metadata."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import select
@@ -46,7 +46,7 @@ class ArtifactService:
             created_by=created_by,
             run_id=run_id,
             filename=filename,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
         session.add(record)
         await session.flush()

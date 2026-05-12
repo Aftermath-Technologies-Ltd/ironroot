@@ -2,7 +2,7 @@
 """gate service layer for verification and regression gates."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -100,7 +100,7 @@ class GateService:
             passed=results["overall"] == "passed",
             artifact_id=artifact.id,
             results=results,
-            executed_at=datetime.utcnow(),
+            executed_at=datetime.now(UTC),
         )
 
         session.add(gate_record)

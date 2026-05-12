@@ -2,7 +2,7 @@
 """belief service layer with database persistence and immutability."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,7 +45,7 @@ class BeliefService:
             confidence=confidence,
             evidence_ids=evidence_ids or [],
             topic_tags=topic_tags or [],
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
 
         session.add(record)
@@ -176,7 +176,7 @@ class ContradictionService:
             belief_id=belief_id,
             contradicts_belief_id=contradicts_belief_id,
             reason=reason,
-            detected_at=datetime.utcnow(),
+            detected_at=datetime.now(UTC),
         )
 
         session.add(record)

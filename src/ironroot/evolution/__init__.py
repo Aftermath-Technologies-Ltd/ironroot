@@ -8,7 +8,7 @@ Promotion rules are strict and cannot be bypassed.
 import json
 import statistics
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -162,7 +162,7 @@ class StrategyEvolutionGate:
                 statistical_significance=1.0,
                 regression_rate_on_baseline=0.0,
                 reasoning=f"Failed gates: {candidate.gates_failed}",
-                decided_at=datetime.utcnow().isoformat(),
+                decided_at=datetime.now(UTC).isoformat(),
             )
             await self._store_result(session, result, run_id)
             return result
@@ -179,7 +179,7 @@ class StrategyEvolutionGate:
                 statistical_significance=significance,
                 regression_rate_on_baseline=0.0,
                 reasoning=f"Effect size {effect_size:.4f} below threshold {self.MIN_EFFECT_SIZE}",
-                decided_at=datetime.utcnow().isoformat(),
+                decided_at=datetime.now(UTC).isoformat(),
             )
             await self._store_result(session, result, run_id)
             return result
@@ -198,7 +198,7 @@ class StrategyEvolutionGate:
                 statistical_significance=significance,
                 regression_rate_on_baseline=regression_rate,
                 reasoning=f"Baseline regression: {degradations}",
-                decided_at=datetime.utcnow().isoformat(),
+                decided_at=datetime.now(UTC).isoformat(),
             )
             await self._store_result(session, result, run_id)
             return result
@@ -214,7 +214,7 @@ class StrategyEvolutionGate:
                     statistical_significance=significance,
                     regression_rate_on_baseline=regression_rate,
                     reasoning=f"Adversarial pass rate {adv_pass_rate:.2f} below {self.MIN_ADVERSARIAL_PASS_RATE}",
-                    decided_at=datetime.utcnow().isoformat(),
+                    decided_at=datetime.now(UTC).isoformat(),
                 )
                 await self._store_result(session, result, run_id)
                 return result
@@ -227,7 +227,7 @@ class StrategyEvolutionGate:
             statistical_significance=significance,
             regression_rate_on_baseline=regression_rate,
             reasoning="All promotion rules satisfied",
-            decided_at=datetime.utcnow().isoformat(),
+            decided_at=datetime.now(UTC).isoformat(),
         )
 
         # update baselines with new values

@@ -18,6 +18,7 @@ select = [
     "ERA",    # eradicate commented-out code
     "PL",     # pylint
     "RUF",    # ruff-specific
+    "DTZ",    # flake8-datetimez (forbid datetime.utcnow / naive datetimes)
 ]
 ignore = [
     "PLR0913",  # too many arguments

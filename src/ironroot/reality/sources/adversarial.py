@@ -6,7 +6,7 @@ Poisoned or shifted distributions that test robustness.
 
 import random
 import statistics
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from ironroot.domain.ids import generate_id
@@ -90,7 +90,7 @@ class AdversarialSource(RealitySource):
             "seed": self._seed,
             "sample_size": self._sample_size,
             "metrics_available": self.get_predictable_metrics(),
-            "contract_timestamp": datetime.utcnow().isoformat(),
+            "contract_timestamp": datetime.now(UTC).isoformat(),
         }
 
     def get_clean_data(self) -> list[dict]:
@@ -113,7 +113,7 @@ class AdversarialSource(RealitySource):
         if not self._computed_metrics:
             self._generate_data()
 
-        acquisition_time = datetime.utcnow().isoformat()
+        acquisition_time = datetime.now(UTC).isoformat()
 
         # hash the adversarial setup
         setup_str = f"{self._attack_type}_{self._severity}_{self._seed}"

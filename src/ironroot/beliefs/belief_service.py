@@ -4,7 +4,7 @@
 import hashlib
 import json
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -434,7 +434,7 @@ class BeliefService:
             "unit": unit,
             "rationale": rationale,
             "status": PredictionStatus.PENDING.value,
-            "locked_at": datetime.utcnow().isoformat(),
+            "locked_at": datetime.now(UTC).isoformat(),
             "observed_value": None,
             "penalty_applied": 0.0,
         }
@@ -503,7 +503,7 @@ class BeliefService:
             "observed_value": observed_value,
             "observation_id": observation_id,
             "penalty_applied": penalty,
-            "evaluated_at": datetime.utcnow().isoformat(),
+            "evaluated_at": datetime.now(UTC).isoformat(),
         }
         prediction.content = new_content
         prediction.confidence = 1.0 if confirmed else 0.0
@@ -650,7 +650,7 @@ class BeliefService:
             confidence=confidence,
             topic_tags=topic_tags,
             evidence_ids=evidence_ids,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(UTC),
         )
         session.add(record)
         await session.flush()

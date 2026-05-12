@@ -9,7 +9,7 @@ import hashlib
 import json
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -138,7 +138,7 @@ class HiddenParameterDataset(RealitySource):
                 "correlation_alcohol_quality",
                 "high_quality_fraction",
             ],
-            "contract_timestamp": datetime.utcnow().isoformat(),
+            "contract_timestamp": datetime.now(UTC).isoformat(),
         }
 
     async def acquire_observations(self) -> list[ExternalObservation]:
@@ -159,7 +159,7 @@ class HiddenParameterDataset(RealitySource):
             raw_data = self._get_fallback_data()
 
         data_hash = hashlib.sha256(raw_data).hexdigest()
-        acquisition_time = datetime.utcnow().isoformat()
+        acquisition_time = datetime.now(UTC).isoformat()
 
         # parse CSV (skip header, last column is quality)
         lines = raw_data.decode("utf-8").strip().split("\n")[1:]

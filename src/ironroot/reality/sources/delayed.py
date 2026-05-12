@@ -7,7 +7,7 @@ Simulates real-world scenarios like clinical trials, A/B tests, investment retur
 
 import random
 import statistics
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from ironroot.domain.ids import generate_id
@@ -89,7 +89,7 @@ class DelayedOutcomeSource(RealitySource):
             "seed": self._seed,
             "metrics_available": self.get_predictable_metrics(),
             "prediction_window": "before_outcome_reveal",
-            "contract_timestamp": datetime.utcnow().isoformat(),
+            "contract_timestamp": datetime.now(UTC).isoformat(),
         }
 
     def get_baseline_data(self) -> dict[str, float]:
@@ -106,7 +106,7 @@ class DelayedOutcomeSource(RealitySource):
         if not self._outcome_data:
             self._generate_data()
 
-        acquisition_time = datetime.utcnow().isoformat()
+        acquisition_time = datetime.now(UTC).isoformat()
 
         # hash outcomes
         outcome_str = ",".join(f"{k}={v}" for k, v in sorted(self._outcome_data.items()))

@@ -13,7 +13,7 @@ import json
 import statistics
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Callable
 
@@ -120,7 +120,7 @@ class SelfHealingRestorer:
             violation_id=generate_id("vio"),
             invariant_type=invariant_type,
             description=description,
-            detected_at=datetime.utcnow().isoformat(),
+            detected_at=datetime.now(UTC).isoformat(),
             run_id=run_id,
             component=component,
             evidence=evidence,
@@ -160,7 +160,7 @@ class SelfHealingRestorer:
                 attempt_id=generate_id("rst"),
                 violation_id=violation_id,
                 strategy=strategy_name,
-                started_at=datetime.utcnow().isoformat(),
+                started_at=datetime.now(UTC).isoformat(),
             )
 
             try:
@@ -192,14 +192,14 @@ class SelfHealingRestorer:
                         attempt.success = True
                         final_status = RestorationStatus.VERIFIED
 
-                attempt.completed_at = datetime.utcnow().isoformat()
+                attempt.completed_at = datetime.now(UTC).isoformat()
                 attempts.append(attempt)
 
                 if attempt.success:
                     break
 
             except Exception as e:
-                attempt.completed_at = datetime.utcnow().isoformat()
+                attempt.completed_at = datetime.now(UTC).isoformat()
                 attempts.append(attempt)
                 continue
 

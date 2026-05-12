@@ -7,7 +7,7 @@ Classic control/physics environments with secret configurations.
 
 import math
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from ironroot.domain.ids import generate_id
@@ -86,7 +86,7 @@ class HiddenParamSimulator(RealitySource):
             "observable_metrics": self._env_config["observable_metrics"],
             "num_trials": self._num_trials,
             "seed": self._seed,
-            "contract_timestamp": datetime.utcnow().isoformat(),
+            "contract_timestamp": datetime.now(UTC).isoformat(),
         }
 
     def run_observable_trials(self) -> list[dict]:
@@ -103,7 +103,7 @@ class HiddenParamSimulator(RealitySource):
         if not self._hidden_params:
             self._simulate()
 
-        acquisition_time = datetime.utcnow().isoformat()
+        acquisition_time = datetime.now(UTC).isoformat()
 
         # hash the hidden params
         param_str = ",".join(f"{k}={v}" for k, v in sorted(self._hidden_params.items()))

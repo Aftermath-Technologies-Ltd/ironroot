@@ -6,7 +6,7 @@ import json
 import random
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -105,7 +105,7 @@ class RunExecutor:
                     "max_tool_calls": budget.max_tool_calls,
                     "max_belief_writes": budget.max_belief_writes,
                 },
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             topic_tags=["run_start"],
         )
@@ -202,7 +202,7 @@ class RunExecutor:
                     "trial_index": trial_index,
                     "expected_signature": fi_config.expected_signature,
                     "affected_components": self._get_affected_components(fi_config.scenario_id),
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
                 fault_artifact = await artifact_service.store_artifact(
                     session=session,
@@ -221,7 +221,7 @@ class RunExecutor:
                 containment_data = {
                     "fault_artifact_id": fault_artifact_id,
                     "commits_frozen": True,
-                    "freeze_timestamp": datetime.utcnow().isoformat(),
+                    "freeze_timestamp": datetime.now(UTC).isoformat(),
                     "detection_method": "gate_invariant_check",
                     "affected_phase": target_phase.value,
                 }
@@ -239,7 +239,7 @@ class RunExecutor:
                 rollback_data = {
                     "fault_artifact_id": fault_artifact_id,
                     "rollback_target": healing_state.last_verified_state,
-                    "rollback_timestamp": datetime.utcnow().isoformat(),
+                    "rollback_timestamp": datetime.now(UTC).isoformat(),
                     "components_reset": self._get_affected_components(fi_config.scenario_id),
                 }
                 rollback_artifact = await artifact_service.store_artifact(
@@ -280,7 +280,7 @@ class RunExecutor:
                     "attempts": healing_state.recovery_attempts,
                     "actions": healing_state.repair_actions,
                     "success": repair_success,
-                    "repair_timestamp": datetime.utcnow().isoformat(),
+                    "repair_timestamp": datetime.now(UTC).isoformat(),
                 }
                 repair_artifact = await artifact_service.store_artifact(
                     session=session,
@@ -314,7 +314,7 @@ class RunExecutor:
                     "tests_added": regression_tests,
                     "pre_fix_results": pre_fix_results,
                     "post_fix_results": post_fix_results,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
                 regression_artifact = await artifact_service.store_artifact(
                     session=session,
@@ -340,7 +340,7 @@ class RunExecutor:
                     "steps_used": steps_in_phase,
                     "tool_calls_used": tool_calls_in_phase,
                     "fault_injected": should_inject,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
                 topic_tags=["phase", target_phase.value],
                 parent_hash=last_belief_hash,
@@ -362,7 +362,7 @@ class RunExecutor:
                     "seed": seed,
                     "traces_match": traces_match,
                     "nondeterminism_events": nondeterminism_events,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
                 test_artifact = await artifact_service.store_artifact(
                     session=session,
@@ -404,7 +404,7 @@ class RunExecutor:
                     "checks_run": checks_run,
                     "counterexamples_found": counterexamples_found,
                     "fault_detected": healing_state.fault_detected,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
                 falsification_artifact = await artifact_service.store_artifact(
                     session=session,
@@ -583,7 +583,7 @@ class RunExecutor:
                 },
                 "observation_count": len(observation_ids),
                 "primary_observation_count": len(primary_observation_ids),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             },
             topic_tags=["run_end"],
             parent_hash=last_belief_hash,
@@ -599,7 +599,7 @@ class RunExecutor:
             .values(
                 status="completed",
                 phase=RunPhase.FINALIZE.value,
-                finished_at=datetime.utcnow(),
+                finished_at=datetime.now(UTC),
             )
         )
 
@@ -673,7 +673,7 @@ class RunExecutor:
                 "action": "recompute_content_hash",
                 "target": "artifact_store",
                 "attempt": attempt + 1,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
         elif scenario_id == "intermittent_timing":
             actions = [
@@ -685,7 +685,7 @@ class RunExecutor:
                 "action": actions[attempt % len(actions)],
                 "target": "execution_scheduler",
                 "attempt": attempt + 1,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
         return {"action": "unknown", "attempt": attempt + 1}
 
@@ -756,7 +756,7 @@ class RunExecutor:
             .values(
                 status="failed",
                 phase=RunPhase.FAILED.value,
-                finished_at=datetime.utcnow(),
+                finished_at=datetime.now(UTC),
                 failure_reason=reason,
             )
         )

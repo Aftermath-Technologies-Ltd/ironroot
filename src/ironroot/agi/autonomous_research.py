@@ -17,7 +17,7 @@ import json
 import random
 import statistics
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
 from typing import Any
 from urllib.parse import urlencode
@@ -680,7 +680,7 @@ class AutonomousResearchAgent:
     ) -> ExternalDataQuery:
         """Execute a query against an external data source."""
         query_id = generate_id("query")
-        start_time = datetime.now()
+        start_time = datetime.now(UTC)
 
         # Build query description based on hypothesis
         query_description = f"Fetch {source_name} data related to: {hypothesis.statement[:50]}"
@@ -703,7 +703,7 @@ class AutonomousResearchAgent:
             response_hash = None
             success = False
 
-        latency = (datetime.now() - start_time).total_seconds() * 1000
+        latency = (datetime.now(UTC) - start_time).total_seconds() * 1000
         latency += self.rng.uniform(50, 500)  # Simulated network latency
 
         return ExternalDataQuery(
