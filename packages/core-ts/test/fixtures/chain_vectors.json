@@ -1,0 +1,17 @@
+[
+  {
+    "name": "single_entry_chain",
+    "payloads": [{ "msg": "hello", "n": 1 }],
+    "expectedHashes": [
+      "8425cc56bcf5dbc564f5f5f4a721c59018a0911b50174406ac0f860618e2b016"
+    ]
+  },
+  {
+    "name": "three_entry_chain",
+    "payloads": [
+      { "msg": "first", "n": 1 },
+      { "msg": "second", "n": 2 },
+      { "msg": "third", "n": 3 }
+    ]
+  }
+]

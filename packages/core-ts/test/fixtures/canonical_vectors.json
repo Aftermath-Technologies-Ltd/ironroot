@@ -1,0 +1,32 @@
+[
+  { "name": "empty_object", "input": {}, "canonical": "{}" },
+  { "name": "empty_array", "input": [], "canonical": "[]" },
+  { "name": "null_value", "input": null, "canonical": "null" },
+  { "name": "true_value", "input": true, "canonical": "true" },
+  { "name": "false_value", "input": false, "canonical": "false" },
+  { "name": "number_int", "input": 42, "canonical": "42" },
+  { "name": "number_zero", "input": 0, "canonical": "0" },
+  { "name": "string_simple", "input": "hello", "canonical": "\"hello\"" },
+  { "name": "string_unicode", "input": "café", "canonical": "\"café\"" },
+  { "name": "string_quote_escape", "input": "he said \"hi\"", "canonical": "\"he said \\\"hi\\\"\"" },
+  {
+    "name": "object_sorted_keys",
+    "input": { "b": 2, "a": 1, "c": 3 },
+    "canonical": "{\"a\":1,\"b\":2,\"c\":3}"
+  },
+  {
+    "name": "nested_object_sorted",
+    "input": { "z": { "b": 2, "a": 1 }, "a": [3, 2, 1] },
+    "canonical": "{\"a\":[3,2,1],\"z\":{\"a\":1,\"b\":2}}"
+  },
+  {
+    "name": "dossier_like_entry",
+    "input": {
+      "entryId": "abc-123",
+      "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "payload": { "pr_url": "https://x/y/pull/1", "gate_results": [{ "name": "lint", "passed": true }] },
+      "createdAt": "2024-01-01T00:00:00.000Z"
+    },
+    "canonical": "{\"createdAt\":\"2024-01-01T00:00:00.000Z\",\"entryId\":\"abc-123\",\"payload\":{\"gate_results\":[{\"name\":\"lint\",\"passed\":true}],\"pr_url\":\"https://x/y/pull/1\"},\"prevHash\":\"0000000000000000000000000000000000000000000000000000000000000000\"}"
+  }
+]
