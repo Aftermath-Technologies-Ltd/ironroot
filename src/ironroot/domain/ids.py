@@ -59,6 +59,8 @@ IdPrefix = Literal[
     "adversarial",
     "attack",
     "bat",
+    # Phase 3.4: API token rows
+    "tok",
 ]
 
 # thread-safe counter for collision resistance within same millisecond

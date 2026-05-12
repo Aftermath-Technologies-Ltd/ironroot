@@ -11,15 +11,14 @@ class TestBeliefImmutability:
 
     def test_update_raises_immutability_violation(self) -> None:
         """update attempt raises ImmutabilityViolation."""
+        import asyncio
+
         from ironroot.beliefs import BeliefService
 
         service = BeliefService()
 
         with pytest.raises(ImmutabilityViolation) as exc_info:
-            # this is sync wrapper just to test the exception
-            import asyncio
-
-            asyncio.get_event_loop().run_until_complete(
+            asyncio.run(
                 service.update_belief(None, "bel_test", {"new": "content"})  # type: ignore
             )
 
@@ -28,16 +27,14 @@ class TestBeliefImmutability:
 
     def test_delete_raises_immutability_violation(self) -> None:
         """delete attempt raises ImmutabilityViolation."""
+        import asyncio
+
         from ironroot.beliefs import BeliefService
 
         service = BeliefService()
 
         with pytest.raises(ImmutabilityViolation) as exc_info:
-            import asyncio
-
-            asyncio.get_event_loop().run_until_complete(
-                service.delete_belief(None, "bel_test")  # type: ignore
-            )
+            asyncio.run(service.delete_belief(None, "bel_test"))  # type: ignore
 
         assert "append-only" in str(exc_info.value)
         assert "bel_test" in str(exc_info.value)

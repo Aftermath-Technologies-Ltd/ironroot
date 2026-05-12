@@ -365,6 +365,109 @@ Migrations history: `001_initial_schema` → `002_beliefs_seq` →
 
 Exit criteria: an operator can hit `/health` and tell whether integrity is intact; a real run produces a real trace; no anonymous writes possible.
 
+### Phase 3 closeout (status 2026-05-12)
+
+All five items merged on `main`. Quality bars preserved:
+`ruff check src/ tests/` 0 errors, `mypy --strict src/` 0 errors,
+`black --check` clean, RNG guard OK, **302 / 302 tests pass**
+(up from 238 at Phase 2 close — +64 new Phase-3 tests across
+health, run lifecycle, event stream, auth, doctor). The doctor CLI
+runs end-to-end and prints actionable WARN/FAIL findings against a
+local environment with no Postgres/Redis.
+
+- **3.1** `/api/v1/health` rewritten in
+  `src/ironroot/api/routes/health.py`. The Phase-0 hard-coded
+  `"ok"` is gone. The endpoint now reports DB connectivity
+  (latency-bounded `SELECT 1`), Redis reachability (latency-bounded
+  PING via `redis.asyncio`), artifact-root writability
+  (touch-and-remove probe), the latest belief `seq` and total
+  chain count, replay-digest sealed-runs count plus oldest/newest
+  baseline age, the count of `GateRecord` failures in the last 24h
+  with `last_failure_at`, and Celery worker liveness via
+  `celery_app.control.ping`. Rollup logic: any of DB/Redis/artifacts
+  failing produces `unhealthy`; worker offline alone is `degraded`;
+  otherwise `healthy`. The endpoint never raises — every probe
+  catches its own errors and surfaces them in the report. 13 new
+  tests in `tests/integration/test_health_real.py` exercise every
+  branch against a real aiosqlite session.
+- **3.2** Real run lifecycle. `RunStatus.gate_status` is no longer
+  hard-coded `None`: the runs route (`api/routes/runs.py`) queries
+  the latest `GateRecord` for each run and surfaces `"passed"` /
+  `"failed"` / `None`. `/runs/{id}/trace` now returns the actual
+  belief subtree (`BeliefRecord` rows ordered by `seq`, paginated,
+  with content, hashes, provenance, and topic tags) — the Phase-0
+  placeholder empty list is gone. Celery `execute_run`
+  (`orchestration/queue.py`) is no longer a no-op: it opens a
+  fresh `async_sessionmaker`, advances the run off `pending`, and
+  dispatches to the real `RunExecutor`, returning the structured
+  result. A new `POST /runs/{id}/execute_async` enqueues a run via
+  Celery and returns the broker task id. The existing synchronous
+  `/execute` route is preserved for tests/ops. 12 tests in
+  `tests/integration/test_run_lifecycle_surface.py` cover the new
+  surface, including Celery in eager mode dispatching to the real
+  orchestrator.
+- **3.3** Real `/ui/events/stream` WebSocket. The Phase-0 echo
+  handler is removed. A new `ironroot.events` package ships a
+  `BeliefEventBus` abstraction with three implementations:
+  `RedisBeliefEventBus` (production, subscribes to the
+  `ironroot.beliefs` channel), `InMemoryBeliefEventBus` (single
+  process / tests), and `NullBeliefEventBus`. `BeliefService._create_belief`
+  publishes a `belief_append` event on every successful chain
+  append — out of the chain lock, after flush, with the bus's own
+  errors swallowed so a broken broker cannot break belief writes.
+  The WebSocket route subscribes to the bus and forwards events as
+  JSON frames; it also handles a `{"type":"ping"}` keepalive so
+  load balancers can probe liveness. 9 tests in
+  `tests/integration/test_event_stream.py` cover bus fan-out,
+  publish-on-append, WebSocket forwarding, ping/pong, and the
+  bus-error-swallowing contract.
+- **3.4** AuthN/AuthZ on `/api/v1/*`. New `api_tokens` table
+  (migration `005_api_tokens.py`) stores opaque bearer tokens as
+  `sha256` hashes, with name, scopes (`read`/`write`/`admin`),
+  creation / last-used / revocation timestamps. New `api/auth.py`
+  module owns `issue_token` (returns the raw secret exactly once),
+  `revoke_token`, `list_tokens`, `require_scope(scope)` (per-route
+  dependency), and `require_method_scope` (router-level dependency
+  that picks `read` for GET/HEAD/OPTIONS and `write` for
+  POST/PUT/PATCH/DELETE). The API router applies the method-scoped
+  dep to every non-health, non-tokens router; `/api/v1/tokens`
+  itself requires `admin` per-route. In-process per-token rate
+  limiting (`auth_rate_limit_per_minute`, default 600) returns 429
+  past the cap. New settings: `auth_enabled` (None = derive from
+  `debug`, False default in dev, True default in prod) and
+  `auth_rate_limit_per_minute`. `/health` is explicitly
+  unauthenticated. WebSocket auth is deferred to the edge proxy
+  (the FastAPI HTTP dep cannot bind to WebSocket scope). 17 tests
+  in `tests/integration/test_api_auth.py` cover unauthenticated
+  blocks, scope enforcement, revocation, rate-limit 429, admin
+  surface, and service-layer invariants.
+- **3.5** `ironroot-doctor` CLI (`ironroot.cli.doctor`). A
+  non-interactive auditor that runs five checks against the
+  resolved config:
+  - `settings.{load, db_password, cors_origins, auth_required,
+    auth_rate_limit_per_minute}` — surfaces the Phase-0.9
+    insecure-default guard, the empty-CORS-in-prod trap, and the
+    auth/rate-limit posture.
+  - `storage.artifact_path` — touch-and-remove probe.
+  - `migrations.alembic_head` — compares code-side head against
+    the configured DB; WARNs gracefully when the DB is
+    unreachable (so a developer-laptop run still produces a
+    useful report).
+  - `redis.ping` — best-effort PING.
+  - `guards.no_random_in_core` — re-runs the existing
+    `scripts/check_no_random_in_core.py` guard.
+  Each finding has `OK` / `WARN` / `FAIL` severity; the CLI exits 1
+  on any `FAIL`, 0 otherwise. `--json` emits the report as JSON
+  for piping. Wired as `ironroot-doctor` in `pyproject.toml`
+  scripts. 15 tests in `tests/unit/test_doctor.py` cover severity
+  rollup, every check, URL redaction in error messages, the JSON
+  output shape, and the CLI subprocess entry point.
+  The Phase-0.9 insecure-default password refusal remains in
+  `Settings._reject_insecure_password_in_prod`.
+
+Migrations history: `001_initial_schema` → `002_beliefs_seq` →
+`003_replay_digest` → `004_beliefs_provenance` → `005_api_tokens`.
+
 ---
 
 ## Phase 4 — Promotion pipeline for quarantined subsystems
@@ -378,6 +481,109 @@ Everything moved to `ironroot.experimental.*` in Phase 0.8 stays there until it 
 5. Has documented invariants in `docs/invariants/<subsystem>.md` and an entry in `EXPERIMENTAL.md` flipped from `experimental` to `supported`.
 
 Subsystems likely to graduate first (smallest gap): a subset of `research/`, the simpler parts of `world_models/`. Subsystems that will likely stay experimental for a long time: `agi/`, `evolution/`, large parts of `cognition/`.
+
+### Phase 4 closeout (status 2026-05-12)
+
+The promotion mechanism is in place and the first graduate has landed.
+Quality bars preserved: `ruff check src/ tests/` 0 errors, `mypy --strict src/`
+0 errors, `black --check` clean, RNG guard OK, **331 / 331 tests pass**
+(up from 302 at Phase 3 close — +29 new Phase-4 tests). Coverage 47.0%
+(floor 30).
+
+- **Mechanism.** New `ironroot-promote` CLI (`src/ironroot/cli/promote.py`,
+  wired in `pyproject.toml` `[project.scripts]`). Given a dotted subsystem
+  prefix it runs eight checks and rolls them up to OK/WARN/FAIL:
+  - `subsystem.exists` — source tree present under `src/ironroot/`.
+  - `criterion_1.no_random` — re-implements the RNG guard scoped to
+    the subsystem tree (regex over `random.*`, `numpy.random.*`,
+    `np.random.*`, plus their import forms, with triple-quoted strings
+    and `#` comments stripped to avoid docstring false-positives).
+  - `criterion_2.typed_belief_writes` — greps for free-form belief
+    writes (`.create_belief(`, `._create_belief(`, `MetricClass.PRIMARY`);
+    promoted subsystems must route through the typed API
+    (`append_observation` / `append_inference` / `append_gate_result`).
+    Phase 2c.3's DB CHECK constraint enforces provenance at the storage
+    layer; the static audit catches the call-site shape.
+  - `criterion_3.falsifiable_claim` — imports `ironroot.<prefix>` and
+    then `ironroot.<prefix>.invariants`, calls its idempotent
+    `register_with_default_registries()` hook (so the check survives
+    `reset_claim_registry_for_testing()` calls earlier in the pytest
+    session), and asserts the registry holds ≥1 claim namespaced
+    `<prefix>.*`.
+  - `criterion_4a.regression_suite` — asserts the regression suite
+    registry has a suite for `run_kind == "<flat_prefix>_promotion"`.
+  - `criterion_4b.promotion_fixtures` — asserts
+    `tests/promotion/test_<flat_prefix>_promotion.py` exists and
+    contains both `def test_*should_pass*` and `def test_*should_fail*`
+    cases (regex over the test source).
+  - `criterion_5.invariants_doc` — asserts `docs/invariants/<flat_prefix>.md`
+    exists and is non-empty.
+  - `status.experimental_manifest` — informational WARN if the prefix is
+    still in `EXPERIMENTAL_MODULE_PREFIXES` (the audit deliberately
+    does NOT auto-flip the manifest; promotion is a deliberate operator
+    action). OK once the prefix is removed.
+
+  Exit code is 1 on any FAIL, 0 otherwise; `WARN` does not gate the exit
+  code so this can ride alongside the doctor and the RNG guard in CI.
+  `--json` emits a stable shape; `--list` enumerates currently-experimental
+  prefixes.
+
+- **First graduate: `world_models`.**
+  - `src/ironroot/world_models/invariants.py` registers one
+    `FalsifiableClaim` (`world_models.evaluation_artifact_well_formed`,
+    asserting every `world_model_evaluation` artifact for a run decodes
+    as a well-formed `EvaluationReport` JSON with three accuracy fields
+    in `[0, 1]`) and one `RegressionSuite` keyed on
+    `run_kind="world_models_promotion"` with two checks
+    (`spec_present_when_evaluation_present`,
+    `evaluation_references_known_spec`). Registration is idempotent.
+  - `docs/invariants/world_models.md` documents the three invariants
+    (I1: evaluation artifact well-formedness, I2: spec presence under
+    evaluation, I3: evaluation references known spec), names the
+    falsifier / regression check that backs each, and lists the failure
+    modes each catches.
+  - `tests/promotion/test_world_models_promotion.py` ships three
+    fixtures: one should-pass (clean register + evaluate path; claim
+    returns `falsified=False`, suite `passed=True`), and two should-fail
+    (a ghost evaluation that trips
+    `spec_present_when_evaluation_present`, and an evaluation with
+    `counterfactual_accuracy=1.5` that trips the claim with the right
+    offending artifact id + field name in the evidence).
+  - `world_models` removed from `EXPERIMENTAL_MODULE_PREFIXES` in
+    `src/ironroot/experimental/__init__.py`; the RNG guard now scans
+    12 quarantined modules instead of 13.
+  - `EXPERIMENTAL.md` row flipped from `experimental` to **`supported`**
+    with a pointer back to the invariants doc.
+
+- **Audit unit tests.** `tests/unit/test_promote.py` (26 tests) covers:
+  the helper `_flat_name`, severity rollup + exit code, every individual
+  check (each with a positive `world_models` case AND a negative case
+  against an unrelated experimental subsystem to prove the check
+  actually discriminates), the end-to-end `audit()` driver
+  (`world_models` eligible, unknown prefix short-circuits to a single
+  FAIL on `subsystem.exists`, `agi` accumulates the expected FAILs),
+  and the CLI subprocess entry point (exit code, table output, JSON
+  shape, `--list`, missing-arg returns 2).
+
+- **Promotion fixture tests.** `tests/promotion/test_world_models_promotion.py`
+  (3 tests) wires the registered claim and suite to an aiosqlite test
+  DB end-to-end and asserts the should-pass / should-fail discrimination.
+
+- **Operational notes for future graduates.** A subsystem promotes by:
+  1. removing every `random.*` from non-test paths,
+  2. authoring `<subsystem>/invariants.py` with one `FalsifiableClaim`
+     and one `RegressionSuite` registered via an idempotent
+     `register_with_default_registries()` hook called from
+     `<subsystem>/__init__.py`,
+  3. writing `docs/invariants/<flat_subsystem>.md`,
+  4. adding `tests/promotion/test_<flat_subsystem>_promotion.py` with
+     `test_*should_pass*` + `test_*should_fail*` cases,
+  5. running `ironroot-promote <prefix>` until every check is OK or
+     WARN,
+  6. removing the prefix from `EXPERIMENTAL_MODULE_PREFIXES` and
+     flipping the `EXPERIMENTAL.md` row to `supported`,
+  7. re-running the audit to verify `status.experimental_manifest`
+     reports OK.
 
 ---
 

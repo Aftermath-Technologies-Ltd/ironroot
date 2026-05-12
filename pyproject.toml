@@ -56,6 +56,8 @@ dev = [
 
 [project.scripts]
 ironroot = "ironroot.main:main"
+ironroot-doctor = "ironroot.cli.doctor:main"
+ironroot-promote = "ironroot.cli.promote:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ironroot"]

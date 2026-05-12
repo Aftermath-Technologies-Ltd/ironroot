@@ -249,6 +249,29 @@ class IncidentRecord(Base):
     run: Mapped["RunRecord"] = relationship(back_populates="incidents")
 
 
+class ApiTokenRecord(Base):
+    """Phase 3.4: opaque bearer tokens with scopes for /api/v1 auth.
+
+    Tokens are stored as ``sha256(secret)`` hashes; the raw secret is
+    returned exactly once at creation time. Scopes are a JSON list of
+    strings drawn from ``{"read", "write", "admin"}``. ``revoked_at``
+    soft-deletes a token without losing the audit trail.
+    """
+
+    __tablename__ = "api_tokens"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    scopes: Mapped[list[str]] = mapped_column(JsonCol, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utc_now)
+    created_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    __table_args__ = (UniqueConstraint("token_hash", name="uq_api_tokens_token_hash"),)
+
+
 class GateRecord(Base):
     """gate execution results."""
 

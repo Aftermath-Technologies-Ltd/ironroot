@@ -28,7 +28,7 @@ every clause of the Phase 4 promotion criteria in `upgrade-plan.md`.
 | `reality`                  | experimental  | "Reality source" registry (RNG simulators, sklearn dataset wrappers). No real external IO.            |
 | `research`                 | experimental  | Research-question + hypothesis generation. Mixed real/RNG; needs Phase 4 audit before promotion.      |
 | `ui_backend`               | experimental  | WebSocket event bridge. No current consumer; previous React UI removed.                               |
-| `world_models`             | experimental  | Forward-model scaffolding; speculative, no integrity-core ties.                                       |
+| `world_models`             | **supported** | Deterministic registry of WorldModelSpec + EvaluationReport artifacts. Phase 4 graduate 2026-05-12. See `docs/invariants/world_models.md`. |
 
 ## Integrity core (NOT experimental, subject to production-grade rules)
 

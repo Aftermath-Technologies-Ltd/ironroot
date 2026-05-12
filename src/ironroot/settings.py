@@ -56,6 +56,22 @@ class Settings(BaseSettings):
     # Empty list in production means "deny all cross-origin requests".
     cors_origins: list[str] = Field(default_factory=list)
 
+    # Phase 3.4: API token authentication on /api/v1/*.
+    #
+    # `auth_enabled` defaults to False in debug mode (so the local
+    # test suite and dev loop keep working) and True in non-debug.
+    # Operators can flip the flag explicitly via
+    # `IRONROOT_AUTH_ENABLED=true|false`.
+    #
+    # `auth_rate_limit_per_minute` caps the per-token request rate
+    # against the auth dependency. Zero disables limiting. The
+    # in-process limiter is "good enough" for v1 — production
+    # deploys are expected to put a real rate limiter at the edge
+    # (nginx, Cloudflare). The setting exists so the limit is at
+    # least visible from one place.
+    auth_enabled: bool | None = Field(default=None)
+    auth_rate_limit_per_minute: int = Field(default=600, ge=0)
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_cors_origins(cls, value: object) -> object:
@@ -84,6 +100,18 @@ class Settings(BaseSettings):
                 "development."
             )
         return self
+
+    @property
+    def auth_required(self) -> bool:
+        """Resolved auth-required flag.
+
+        Defaults: in non-debug mode auth is required; in debug mode it
+        is optional. Operators can override either way via
+        ``IRONROOT_AUTH_ENABLED``.
+        """
+        if self.auth_enabled is None:
+            return not self.debug
+        return self.auth_enabled
 
     @property
     def database_url(self) -> str:

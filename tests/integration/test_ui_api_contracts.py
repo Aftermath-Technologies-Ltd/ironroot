@@ -9,6 +9,24 @@ from fastapi.testclient import TestClient
 from ironroot.main import app
 
 
+def _empty_result() -> MagicMock:
+    """Result-like stub for execute() — see test_api_runs._empty_result."""
+    result = MagicMock()
+    result.scalar_one_or_none.return_value = None
+    result.scalar.return_value = None
+    result.all.return_value = []
+    result.scalars.return_value.all.return_value = []
+    return result
+
+
+def _make_session() -> AsyncMock:
+    session = AsyncMock()
+    session.execute = AsyncMock(return_value=_empty_result())
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock(return_value=None)
+    return session
+
+
 @pytest.fixture
 def client() -> TestClient:
     """test client for api."""
@@ -37,14 +55,36 @@ class TestUiApiContracts:
     """tests that ui-facing endpoints return expected shapes."""
 
     def test_health_shape(self, client: TestClient) -> None:
-        """health response has required fields."""
-        response = client.get("/api/v1/health")
-        data = response.json()
+        """health response has required fields (Phase 3.1 shape)."""
+        from unittest.mock import AsyncMock
 
-        assert "status" in data
-        assert "db" in data
-        assert "redis" in data
-        assert "artifacts" in data
+        from ironroot.api.deps import get_db_session
+
+        async def _session_override() -> AsyncMock:
+            session = AsyncMock()
+            session.execute = AsyncMock(side_effect=RuntimeError("no db in this test"))
+            yield session
+
+        app.dependency_overrides[get_db_session] = _session_override
+        try:
+            response = client.get("/api/v1/health")
+        finally:
+            app.dependency_overrides.pop(get_db_session, None)
+
+        data = response.json()
+        for field in (
+            "status",
+            "db",
+            "redis",
+            "artifacts",
+            "chain",
+            "replay",
+            "gates",
+            "worker",
+            "version",
+            "checked_at",
+        ):
+            assert field in data, f"missing field {field}"
 
     @patch("ironroot.api.routes.runs.get_run_service")
     @patch("ironroot.api.deps.get_session_factory")
@@ -56,7 +96,7 @@ class TestUiApiContracts:
         mock_svc.create_run = AsyncMock(return_value=mock_run_record)
         mock_service.return_value = mock_svc
 
-        mock_session = AsyncMock()
+        mock_session = _make_session()
         mock_factory.return_value = lambda: mock_session
 
         with TestClient(app) as client:
@@ -77,7 +117,7 @@ class TestUiApiContracts:
         mock_svc.get_run = AsyncMock(return_value=mock_run_record)
         mock_service.return_value = mock_svc
 
-        mock_session = AsyncMock()
+        mock_session = _make_session()
         mock_factory.return_value = lambda: mock_session
 
         with TestClient(app) as client:
@@ -101,7 +141,7 @@ class TestUiApiContracts:
     @patch("ironroot.api.deps.get_session_factory")
     def test_trace_shape(self, mock_factory: AsyncMock) -> None:
         """trace response has required fields."""
-        mock_session = AsyncMock()
+        mock_session = _make_session()
         mock_factory.return_value = lambda: mock_session
 
         with TestClient(app) as client:
@@ -126,7 +166,7 @@ class TestUiApiContracts:
         )
         mock_gate_svc.return_value = mock_svc
 
-        mock_session = AsyncMock()
+        mock_session = _make_session()
         mock_factory.return_value = lambda: mock_session
 
         with TestClient(app) as client:

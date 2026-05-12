@@ -39,7 +39,9 @@ EXPERIMENTAL_MODULE_PREFIXES: tuple[str, ...] = (
     "reality",
     "research",
     "ui_backend",
-    "world_models",
+    # ``world_models`` graduated to supported at Phase 4 closeout
+    # (2026-05-12). See docs/invariants/world_models.md and
+    # EXPERIMENTAL.md.
 )
 
 

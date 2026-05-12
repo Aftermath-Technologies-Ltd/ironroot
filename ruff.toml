@@ -86,3 +86,8 @@ combine-as-imports = true
 "src/ironroot/ui_backend/**/*.py" = ["E501", "RUF012", "UP042", "F401", "F841"]
 "src/ironroot/world_models/**/*.py" = ["E501", "RUF012", "UP042", "F841", "F401", "RUF015"]
 "scripts/*.py" = ["E501", "PLR0915"]
+# Phase 3.5: the doctor CLI's _check_alembic_head has 8 return statements
+# (one per failure mode). The default cap is 6. Reading "one return per
+# failure mode" is the clearest expression of the code's intent — folding
+# into a single dispatch dict would obscure the per-mode message strings.
+"src/ironroot/cli/doctor.py" = ["PLR0911"]

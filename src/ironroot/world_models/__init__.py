@@ -363,3 +363,11 @@ def get_world_model_registry() -> WorldModelRegistry:
     if _registry is None:
         _registry = WorldModelRegistry()
     return _registry
+
+
+# Phase 4: registers the world_models FalsifiableClaim and RegressionSuite
+# with the process-global registries. Idempotent — safe to import this
+# package multiple times.
+from ironroot.world_models.invariants import register_with_default_registries  # noqa: E402
+
+register_with_default_registries()

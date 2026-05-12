@@ -785,7 +785,52 @@ class BeliefService:
             )
             session.add(record)
             await session.flush()
-            return record
+
+        # Phase 3.3: publish an advisory event for the UI live stream.
+        # Out of the chain lock — the row is already persistent in the
+        # transaction; if the caller rolls back, the subscriber will
+        # see the event but a refetch of the run's trace will reveal
+        # the chain is intact. Events are advisory, the chain is the
+        # source of truth.
+        await self._publish_belief_event(record)
+
+        return record
+
+    async def _publish_belief_event(self, record: BeliefRecord) -> None:
+        """Fires a belief-append event on the configured event bus.
+
+        Publish errors are swallowed by the bus implementation; we
+        do not want a broker outage to break belief writes. The bus
+        is fetched per call so test overrides via
+        ``set_belief_event_bus`` take effect without a service
+        restart.
+        """
+        from ironroot.events import get_belief_event_bus
+
+        try:
+            bus = get_belief_event_bus()
+        except Exception:
+            return
+        # The production buses (Redis) swallow their own errors. We
+        # add an outer guard so a misbehaving custom bus (test
+        # double, third-party shim) can't break the append either.
+        try:
+            await bus.publish(
+                {
+                    "type": "belief_append",
+                    "belief_id": record.id,
+                    "run_id": record.run_id,
+                    "seq": record.seq,
+                    "agent_id": record.agent_id,
+                    "belief_type": record.belief_type,
+                    "content_hash": record.content_hash,
+                    "parent_hash": record.parent_hash,
+                    "topic_tags": list(record.topic_tags or []),
+                    "created_at": record.created_at.isoformat(),
+                }
+            )
+        except Exception:
+            return
 
     @staticmethod
     def _validate_provenance(
