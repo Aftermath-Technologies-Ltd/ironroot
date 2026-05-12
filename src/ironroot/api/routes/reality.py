@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.api.deps import RequestIdDep, get_db_session
-from ironroot.beliefs.belief_service import get_belief_service
+from ironroot.beliefs import get_belief_service
 from ironroot.orchestration.run_service import get_run_service
 from ironroot.reality.executor import get_reality_executor
 
@@ -148,7 +148,7 @@ async def get_falsification_details(
     # get all beliefs for this run
     from sqlalchemy import select
 
-    from ironroot.beliefs.belief_service import BeliefType
+    from ironroot.beliefs import BeliefType
     from ironroot.storage.models import BeliefRecord
 
     result = await session.execute(select(BeliefRecord).where(BeliefRecord.run_id == run_id))

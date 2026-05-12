@@ -28,7 +28,7 @@ from enum import Enum
 from scipy import stats as scipy_stats
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ironroot.beliefs.belief_service import get_belief_service
+from ironroot.beliefs import get_belief_service
 from ironroot.capabilities import get_capability_registry
 from ironroot.domain.ids import generate_id
 from ironroot.evolution import (

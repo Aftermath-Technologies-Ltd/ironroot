@@ -25,7 +25,7 @@ from datetime import UTC, datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.battery import get_gi_battery
-from ironroot.beliefs.belief_service import get_belief_service
+from ironroot.beliefs import get_belief_service
 from ironroot.capabilities import CapabilityStatus, get_capability_registry
 from ironroot.domain.ids import generate_id
 from ironroot.evolution import (

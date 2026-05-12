@@ -13,7 +13,7 @@ from typing import Any
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ironroot.beliefs.belief_service import MetricClass, get_belief_service
+from ironroot.beliefs import MetricClass, get_belief_service
 from ironroot.orchestration.budgets import Budget
 from ironroot.orchestration.supervisor import RunPhase, Supervisor
 from ironroot.storage.artifact_service import get_artifact_service

@@ -9,7 +9,7 @@ from typing import Any
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ironroot.beliefs.belief_service import (
+from ironroot.beliefs import (
     MetricClass,
     get_belief_service,
 )

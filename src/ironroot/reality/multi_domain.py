@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ironroot.beliefs.belief_service import MetricClass, get_belief_service
+from ironroot.beliefs import MetricClass, get_belief_service
 from ironroot.reality.sources.adversarial import AdversarialSource
 from ironroot.reality.sources.base import RealitySource
 from ironroot.reality.sources.delayed import DelayedOutcomeSource
