@@ -75,6 +75,13 @@ class RunRecord(Base):
     tool_calls_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     belief_writes_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
+    # Phase 1.5: replay digest sealed at run completion. The replay gate
+    # recomputes the digest from the live chain and compares.
+    replay_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    replay_digest_sealed_at: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True
+    )
+
     beliefs: Mapped[list["BeliefRecord"]] = relationship(back_populates="run")
     agents: Mapped[list["AgentRecord"]] = relationship(back_populates="run")
     incidents: Mapped[list["IncidentRecord"]] = relationship(back_populates="run")

@@ -5,7 +5,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.beliefs import get_belief_service
@@ -13,6 +13,7 @@ from ironroot.domain.errors import GateFailed, NotFoundError
 from ironroot.domain.ids import generate_id
 from ironroot.storage.artifact_service import get_artifact_service
 from ironroot.storage.models import ArtifactRecord, GateRecord, RunRecord
+from ironroot.verification.replay import compute_chain_digest
 
 
 class GateService:
@@ -107,17 +108,61 @@ class GateService:
         return gate_record
 
     async def _check_replay(self, session: AsyncSession, run_id: str, seed: int) -> dict[str, Any]:
-        """checks replay determinism for a run."""
-        # for now, compute current digest and store it
-        # in a real system this would compare against a stored baseline
-        belief_service = get_belief_service()
-        chain_valid = await belief_service.verify_chain(session, run_id)
+        """checks replay determinism by comparing live digest to sealed baseline.
 
+        Phase 1.5 semantics:
+
+        - If no baseline is sealed yet (first time this gate runs against a
+          completed chain), compute the live digest and seal it. Reports
+          ``passed=True`` with ``baselined=True`` so an operator knows
+          this run established the baseline rather than verifying one.
+        - If a baseline is sealed, recompute the live digest and compare.
+          Match -> pass. Mismatch -> fail with both digests in the
+          evidence so the operator can diff manually.
+
+        The old "re-run verify_chain" implementation was deleted — that
+        check is the integrity gate's job. The replay gate now does
+        something distinct: detect non-deterministic / tampered chains
+        across time.
+        """
+        live_digest = await compute_chain_digest(session, run_id)
+
+        run = (
+            await session.execute(select(RunRecord).where(RunRecord.id == run_id))
+        ).scalar_one_or_none()
+        baseline = run.replay_digest if run is not None else None
+
+        if baseline is None:
+            # First check: seal the baseline.
+            await session.execute(
+                update(RunRecord)
+                .where(RunRecord.id == run_id)
+                .values(
+                    replay_digest=live_digest,
+                    replay_digest_sealed_at=datetime.now(UTC),
+                )
+            )
+            return {
+                "passed": True,
+                "seed": seed,
+                "baselined": True,
+                "live_digest": live_digest,
+                "baseline_digest": live_digest,
+                "details": "no prior baseline; sealed current digest",
+            }
+
+        match = baseline == live_digest
         return {
-            "passed": chain_valid,
+            "passed": match,
             "seed": seed,
-            "chain_valid": chain_valid,
-            "details": "" if chain_valid else "belief chain verification failed",
+            "baselined": False,
+            "live_digest": live_digest,
+            "baseline_digest": baseline,
+            "details": (
+                ""
+                if match
+                else f"replay digest mismatch: baseline={baseline} live={live_digest}"
+            ),
         }
 
     async def _check_integrity(self, session: AsyncSession, run_id: str) -> dict[str, Any]:
