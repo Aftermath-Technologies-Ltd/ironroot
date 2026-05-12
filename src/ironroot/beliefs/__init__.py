@@ -8,6 +8,7 @@ from ironroot.beliefs.belief_service import (
     BeliefType,
     MetricClass,
     PredictionStatus,
+    ProvenanceRef,
     get_belief_service,
 )
 from ironroot.beliefs.contradiction_service import (
@@ -23,6 +24,7 @@ __all__ = [
     "ContradictionService",
     "MetricClass",
     "PredictionStatus",
+    "ProvenanceRef",
     "get_belief_service",
     "get_contradiction_service",
 ]

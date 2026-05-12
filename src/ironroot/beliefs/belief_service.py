@@ -8,6 +8,7 @@ import json
 import re
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
@@ -26,10 +27,72 @@ class BeliefType(StrEnum):
 
     LIFECYCLE = "lifecycle"  # run_start, run_end, phase transitions - NOT research
     OBSERVATION = "observation"  # numeric measurements, zero interpretation
+    INFERENCE = "inference"  # derived from observation(s), carries provenance
     HYPOTHESIS = "hypothesis"  # claims about causation, max 1 per run
     PREDICTION = "prediction"  # locked claims about future reality, penalties apply
     VIOLATION = "violation"  # named invariant fired; emitted by the invariants gate
     GATE_RESULT = "gate_result"  # gate decision belief (Phase 2a populates this)
+
+
+# Belief types that must carry a non-empty `provenance` blob (DB-enforced
+# by ck_beliefs_provenance_for_derived plus this list). PRIMARY observations
+# and lifecycle bookkeeping legitimately have no upstream belief.
+_DERIVED_BELIEF_TYPES = frozenset(
+    {
+        BeliefType.INFERENCE,
+        BeliefType.HYPOTHESIS,
+        BeliefType.PREDICTION,
+        BeliefType.VIOLATION,
+        BeliefType.GATE_RESULT,
+    }
+)
+
+
+@dataclass(frozen=True)
+class ProvenanceRef:
+    """typed reference to upstream source(s) for a derived belief (Phase 2c.3).
+
+    A derived belief carries a `provenance` blob that survives the chain
+    digest and is queryable. It records:
+
+    * `belief_ids` — upstream belief ids this belief was derived from
+    * `artifact_ids` — upstream artifact ids (e.g., a falsification report)
+    * `fixture_ids` — deterministic fixture ids (e.g., a FaultFixture id)
+    * `kind`        — short tag for the relation ("derived_from",
+                       "fault_observation", "gate_decision", ...)
+    * `notes`       — free-text annotation surfaced in audits
+
+    At least one of `belief_ids`, `artifact_ids`, `fixture_ids` must be
+    non-empty for the value to be considered a valid provenance — empty
+    refs serialize to `{}` and trip the DB CHECK on derived rows.
+    """
+
+    kind: str = "derived_from"
+    belief_ids: tuple[str, ...] = field(default_factory=tuple)
+    artifact_ids: tuple[str, ...] = field(default_factory=tuple)
+    fixture_ids: tuple[str, ...] = field(default_factory=tuple)
+    notes: str = ""
+
+    def is_empty(self) -> bool:
+        """True if no upstream id of any kind is recorded."""
+        return not (self.belief_ids or self.artifact_ids or self.fixture_ids)
+
+    def to_dict(self) -> dict[str, Any]:
+        """canonical dict form persisted in the `provenance` column.
+
+        Returns `{}` if the ref is empty so downstream readers (and the DB
+        CHECK constraint) treat it as "no provenance recorded" — matters
+        because the constraint compares the JSON text to `'{}'`.
+        """
+        if self.is_empty():
+            return {}
+        return {
+            "kind": self.kind,
+            "belief_ids": list(self.belief_ids),
+            "artifact_ids": list(self.artifact_ids),
+            "fixture_ids": list(self.fixture_ids),
+            "notes": self.notes,
+        }
 
 
 class MetricClass(StrEnum):
@@ -242,6 +305,7 @@ class BeliefService:
         topic_tags: list[str],
         comparator: str | None = None,
         parent_hash: str | None = None,
+        provenance: ProvenanceRef | None = None,
     ) -> BeliefRecord:
         """creates an observation belief with strict schema enforcement."""
         # rule 1: check run phase
@@ -301,6 +365,7 @@ class BeliefService:
             topic_tags=["observation", metric_class.value, *topic_tags],
             parent_hash=parent_hash,
             evidence_ids=artifact_ids,
+            provenance=provenance,
         )
 
     async def create_hypothesis_belief(
@@ -405,6 +470,11 @@ class BeliefService:
             topic_tags=["hypothesis", *topic_tags],
             parent_hash=parent_hash,
             evidence_ids=[verifier_artifact_id, *observation_ids],
+            provenance=ProvenanceRef(
+                kind="hypothesis_from_observations",
+                belief_ids=tuple(observation_ids),
+                artifact_ids=(verifier_artifact_id,),
+            ),
         )
 
     async def mark_hypothesis_contradicted(
@@ -442,6 +512,7 @@ class BeliefService:
         rationale: str,
         topic_tags: list[str],
         parent_hash: str | None = None,
+        provenance: ProvenanceRef | None = None,
     ) -> BeliefRecord:
         """creates a locked prediction belief before reality observation.
 
@@ -468,6 +539,15 @@ class BeliefService:
             "penalty_applied": 0.0,
         }
 
+        # Predictions are derived: they reference a `source_id` (reality
+        # source). Synthesize a minimal ProvenanceRef from that if the
+        # caller didn't supply one explicitly so the DB CHECK passes.
+        effective_provenance = provenance or ProvenanceRef(
+            kind="prediction_from_source",
+            fixture_ids=(source_id,),
+            notes=f"prediction on {metric_name} against source {source_id}",
+        )
+
         return await self._create_belief(
             session=session,
             run_id=run_id,
@@ -478,6 +558,7 @@ class BeliefService:
             topic_tags=["prediction", metric_name, *topic_tags],
             parent_hash=parent_hash,
             evidence_ids=[],
+            provenance=effective_provenance,
         )
 
     async def evaluate_prediction(
@@ -658,6 +739,7 @@ class BeliefService:
         topic_tags: list[str],
         parent_hash: str | None,  # ignored; chain owns parent linkage
         evidence_ids: list[str],
+        provenance: ProvenanceRef | None = None,
     ) -> BeliefRecord:
         """internal belief creation.
 
@@ -665,8 +747,15 @@ class BeliefService:
         derives the parent under the per-chain lock to prevent forks
         (see class docstring). The kwarg is retained for one release so
         the orchestration executor keeps type-checking.
+
+        `provenance` is mandatory (non-empty) for derived belief types —
+        see `_DERIVED_BELIEF_TYPES`. The DB CHECK constraint
+        `ck_beliefs_provenance_for_derived` enforces the same rule and
+        catches anyone bypassing this method.
         """
         del parent_hash  # explicitly discard caller-supplied value
+
+        provenance_dict = self._validate_provenance(belief_type, content, provenance)
 
         # include run_id in hash to allow same content across runs
         hash_input = json.dumps({"run_id": run_id, "content": content}, sort_keys=True)
@@ -691,11 +780,51 @@ class BeliefService:
                 confidence=confidence,
                 topic_tags=topic_tags,
                 evidence_ids=evidence_ids,
+                provenance=provenance_dict,
                 created_at=now,
             )
             session.add(record)
             await session.flush()
             return record
+
+    @staticmethod
+    def _validate_provenance(
+        belief_type: BeliefType,
+        content: dict[str, Any],
+        provenance: ProvenanceRef | None,
+    ) -> dict[str, Any]:
+        """returns the dict to persist in `provenance`; raises if invalid.
+
+        Rules (Phase 2c.3):
+
+        * derived types (`_DERIVED_BELIEF_TYPES`) MUST carry a non-empty
+          ProvenanceRef.
+        * SECONDARY observations MUST carry a non-empty ProvenanceRef.
+        * PRIMARY observations and lifecycle events MAY have empty
+          provenance (they sit at the bottom of the inference graph).
+        """
+        prov_dict = provenance.to_dict() if provenance is not None else {}
+        empty = not prov_dict
+
+        if belief_type in _DERIVED_BELIEF_TYPES and empty:
+            raise InvariantViolation(
+                "belief_provenance_required",
+                f"belief_type={belief_type.value} requires a non-empty "
+                "provenance ref pointing at source belief(s)/artifact(s)/"
+                "fixture(s); got an empty ProvenanceRef",
+            )
+
+        if belief_type == BeliefType.OBSERVATION and empty:
+            metric_class = content.get("metric_class")
+            if metric_class == MetricClass.SECONDARY.value:
+                raise InvariantViolation(
+                    "belief_provenance_required",
+                    "SECONDARY observations require a non-empty provenance "
+                    "ref; PRIMARY observations are exempt because they sit "
+                    "at the bottom of the inference graph",
+                )
+
+        return prov_dict
 
     @asynccontextmanager
     async def _chain_lock(self, session: AsyncSession, run_id: str) -> AsyncIterator[None]:
@@ -868,6 +997,7 @@ class BeliefService:
                 confidence=confidence,
                 evidence_ids=evidence_ids or [],
                 topic_tags=topic_tags or [],
+                provenance={},
                 created_at=now,
             )
             session.add(record)
@@ -967,6 +1097,7 @@ class BeliefService:
         details: str,
         evidence_ids: list[str] | None = None,
         topic_tags: list[str] | None = None,
+        provenance: ProvenanceRef | None = None,
     ) -> BeliefRecord:
         """records an invariant violation as a typed belief (Phase 1.6).
 
@@ -980,6 +1111,25 @@ class BeliefService:
             "invariant": invariant_name,
             "details": details,
         }
+        # Synthesize a non-empty ProvenanceRef. If the caller supplied
+        # evidence_ids treat those as the source artifacts; otherwise the
+        # invariant name itself is the "fixture" (the named invariant is
+        # the upstream check, recorded so audits can trace why this
+        # violation belief exists).
+        if provenance is not None:
+            effective_provenance = provenance
+        elif evidence_ids:
+            effective_provenance = ProvenanceRef(
+                kind="invariant_violation",
+                artifact_ids=tuple(evidence_ids),
+                notes=f"invariant '{invariant_name}' fired during invariants gate",
+            )
+        else:
+            effective_provenance = ProvenanceRef(
+                kind="invariant_violation",
+                fixture_ids=(f"invariant:{invariant_name}",),
+                notes=f"invariant '{invariant_name}' fired during invariants gate",
+            )
         return await self._create_belief(
             session=session,
             run_id=run_id,
@@ -990,6 +1140,167 @@ class BeliefService:
             topic_tags=["violation", invariant_name, *(topic_tags or [])],
             parent_hash=None,
             evidence_ids=evidence_ids or [],
+            provenance=effective_provenance,
+        )
+
+    # ------------------------------------------------------------------
+    # Phase 2c.2 — typed write API. The verbs are `append_*` to match the
+    # upgrade-plan §2c.2 names and to make the call-site read like the
+    # append-only invariant the chain enforces.
+    # ------------------------------------------------------------------
+
+    async def append_observation(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        agent_id: str,
+        metric_name: str,
+        value: int | float | bool,
+        unit: str,
+        method: str,
+        metric_class: MetricClass,
+        artifact_ids: list[str],
+        topic_tags: list[str],
+        comparator: str | None = None,
+        provenance: ProvenanceRef | None = None,
+    ) -> BeliefRecord:
+        """typed alias for `create_observation_belief` (Phase 2c.2).
+
+        Use this at all call sites instead of the older `create_*` form.
+        No free-form `MetricClass` strings at the call site — pass the
+        `MetricClass` enum.
+        """
+        return await self.create_observation_belief(
+            session=session,
+            run_id=run_id,
+            agent_id=agent_id,
+            metric_name=metric_name,
+            value=value,
+            unit=unit,
+            method=method,
+            metric_class=metric_class,
+            artifact_ids=artifact_ids,
+            topic_tags=topic_tags,
+            comparator=comparator,
+            provenance=provenance,
+        )
+
+    async def append_inference(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        agent_id: str,
+        claim: str,
+        provenance: ProvenanceRef,
+        topic_tags: list[str] | None = None,
+        confidence: float = 1.0,
+        details: dict[str, Any] | None = None,
+    ) -> BeliefRecord:
+        """records an inference derived from upstream beliefs/artifacts.
+
+        Inferences are the "we computed X from Y" layer between raw
+        observations and full hypotheses. Unlike `create_hypothesis_belief`
+        the inference does NOT require 2 observations or a verifier
+        artifact — it only requires a non-empty provenance ref. Use it
+        when a subsystem (restoration, executor) needs to record a
+        derivation without claiming a hypothesis-grade statistical
+        finding.
+
+        `provenance` is mandatory and must point at the source(s).
+        """
+        if provenance.is_empty():
+            raise InvariantViolation(
+                "inference_provenance_required",
+                "append_inference requires a non-empty ProvenanceRef "
+                "naming at least one upstream belief, artifact, or fixture",
+            )
+
+        content: dict[str, Any] = {"claim": claim}
+        if details:
+            content["details"] = details
+
+        return await self._create_belief(
+            session=session,
+            run_id=run_id,
+            agent_id=agent_id,
+            belief_type=BeliefType.INFERENCE,
+            content=content,
+            confidence=confidence,
+            topic_tags=["inference", *(topic_tags or [])],
+            parent_hash=None,
+            evidence_ids=list(provenance.belief_ids) + list(provenance.artifact_ids),
+            provenance=provenance,
+        )
+
+    async def append_gate_result(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        gate_name: str,
+        passed: bool,
+        input_digest: str,
+        decision_details: dict[str, Any],
+        evidence_belief_ids: list[str] | None = None,
+        evidence_artifact_ids: list[str] | None = None,
+    ) -> BeliefRecord:
+        """records a gate decision as a typed GATE_RESULT belief (Phase 2a.4).
+
+        Inputs:
+
+        * `gate_name`            — short identifier (e.g. "replay",
+                                   "falsification", "regression")
+        * `passed`               — boolean decision
+        * `input_digest`         — sha256 of the canonical inputs the
+                                   decision was computed over; pins the
+                                   gate's view of the world so replays
+                                   can verify it didn't drift
+        * `decision_details`     — gate-specific payload (counterexample
+                                   evidence id, regression failure list,
+                                   live vs baseline digest, etc.)
+        * `evidence_belief_ids`  — upstream belief ids the gate consulted
+        * `evidence_artifact_ids`— upstream artifact ids the gate consulted
+
+        The gate result becomes part of the chain, so re-running gates
+        appends a new belief rather than mutating the old one.
+        """
+        content: dict[str, Any] = {
+            "gate_name": gate_name,
+            "passed": passed,
+            "input_digest": input_digest,
+            "decision": decision_details,
+        }
+
+        belief_ids = tuple(evidence_belief_ids or ())
+        artifact_ids = tuple(evidence_artifact_ids or ())
+
+        # Even a "no upstream evidence" gate result (degenerate case)
+        # carries provenance pointing at the input digest itself, which
+        # is enough for the DB CHECK to accept it.
+        if not belief_ids and not artifact_ids:
+            provenance = ProvenanceRef(
+                kind="gate_input_digest",
+                fixture_ids=(input_digest,),
+                notes=f"gate={gate_name} input_digest={input_digest}",
+            )
+        else:
+            provenance = ProvenanceRef(
+                kind="gate_decision",
+                belief_ids=belief_ids,
+                artifact_ids=artifact_ids,
+                notes=f"gate={gate_name} input_digest={input_digest}",
+            )
+
+        return await self._create_belief(
+            session=session,
+            run_id=run_id,
+            agent_id=f"gate:{gate_name}",
+            belief_type=BeliefType.GATE_RESULT,
+            content=content,
+            confidence=1.0 if passed else 0.0,
+            topic_tags=["gate", gate_name, "passed" if passed else "failed"],
+            parent_hash=None,
+            evidence_ids=list(belief_ids) + list(artifact_ids),
+            provenance=provenance,
         )
 
     async def update_belief(

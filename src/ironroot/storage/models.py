@@ -113,6 +113,11 @@ class BeliefRecord(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JsonCol, nullable=False, default=list)
     topic_tags: Mapped[list[str]] = mapped_column(JsonCol, nullable=False, default=list)
+    # Phase 2c.3: structured ProvenanceRef. Mandatory for any non-PRIMARY
+    # belief — DB-enforced via ck_beliefs_provenance_for_derived below plus
+    # application-level validation in BeliefService. Empty dict = no source
+    # (acceptable only for lifecycle events and PRIMARY observations).
+    provenance: Mapped[dict[str, Any]] = mapped_column(JsonCol, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utc_now)
 
     run: Mapped["RunRecord"] = relationship(back_populates="beliefs")
@@ -127,6 +132,19 @@ class BeliefRecord(Base):
         CheckConstraint(
             "(parent_hash IS NULL AND seq = 1) OR (parent_hash IS NOT NULL AND seq > 1)",
             name="ck_beliefs_root_iff_seq_one",
+        ),
+        # Phase 2c.3: every derived belief must carry a non-empty provenance
+        # blob. Lifecycle events and observations are the only types that
+        # may legitimately have no upstream belief (lifecycle = bookkeeping;
+        # PRIMARY observations sit at the bottom of the inference graph).
+        # The PRIMARY-vs-SECONDARY distinction for observations is enforced
+        # at the BeliefService layer because metric_class lives inside the
+        # JSON content column and writing a portable CHECK over JSON across
+        # PG/SQLite is fragile.
+        CheckConstraint(
+            "belief_type IN ('lifecycle', 'observation') "
+            "OR (provenance IS NOT NULL AND provenance != '{}' AND provenance != '')",
+            name="ck_beliefs_provenance_for_derived",
         ),
     )
 
