@@ -118,9 +118,7 @@ class ArtifactStore:
                 "reason= and operator= to confirm an intentional delete."
             )
         if not reason or not operator:
-            raise ValueError(
-                "_unsafe_delete refused: reason= and operator= must be non-empty"
-            )
+            raise ValueError("_unsafe_delete refused: reason= and operator= must be non-empty")
 
         artifact_path = self._get_artifact_path(content_hash)
         existed = artifact_path.exists()

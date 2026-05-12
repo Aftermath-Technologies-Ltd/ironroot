@@ -78,9 +78,7 @@ class RunRecord(Base):
     # Phase 1.5: replay digest sealed at run completion. The replay gate
     # recomputes the digest from the live chain and compares.
     replay_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    replay_digest_sealed_at: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True
-    )
+    replay_digest_sealed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     beliefs: Mapped[list["BeliefRecord"]] = relationship(back_populates="run")
     agents: Mapped[list["AgentRecord"]] = relationship(back_populates="run")
@@ -224,7 +222,9 @@ class IncidentRecord(Base):
     severity: Mapped[str] = mapped_column(String(20), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     evidence_ids: Mapped[list[str]] = mapped_column(JsonCol, nullable=False, default=list)
-    penalties_applied: Mapped[dict[str, Any]] = mapped_column(JsonCol, nullable=False, default=dict)
+    penalties_applied: Mapped[dict[str, Any]] = mapped_column(
+        JsonCol, nullable=False, default=dict
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utc_now)
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 

@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ironroot.beliefs import BeliefService
 from ironroot.storage.models import BeliefRecord, RunRecord
@@ -70,9 +70,7 @@ async def test_first_replay_gate_seals_baseline(
     gate = GateService()
     async with session_factory() as session:
         # need some activity to satisfy execute_gates' guard
-        run = (
-            await session.execute(select(RunRecord).where(RunRecord.id == run_id))
-        ).scalar_one()
+        run = (await session.execute(select(RunRecord).where(RunRecord.id == run_id))).scalar_one()
         run.belief_writes_used = 3
         await session.commit()
 
@@ -85,9 +83,7 @@ async def test_first_replay_gate_seals_baseline(
     assert result["live_digest"] == result["baseline_digest"]
 
     async with session_factory() as session:
-        run = (
-            await session.execute(select(RunRecord).where(RunRecord.id == run_id))
-        ).scalar_one()
+        run = (await session.execute(select(RunRecord).where(RunRecord.id == run_id))).scalar_one()
         assert run.replay_digest == result["live_digest"]
         assert run.replay_digest_sealed_at is not None
 
@@ -136,12 +132,16 @@ async def test_tampered_content_breaks_replay_gate(
     # the gate exists to catch.
     async with session_factory() as session:
         target = (
-            await session.execute(
-                select(BeliefRecord)
-                .where(BeliefRecord.run_id == run_id)
-                .order_by(BeliefRecord.seq.asc())
+            (
+                await session.execute(
+                    select(BeliefRecord)
+                    .where(BeliefRecord.run_id == run_id)
+                    .order_by(BeliefRecord.seq.asc())
+                )
             )
-        ).scalars().all()[2]
+            .scalars()
+            .all()[2]
+        )
         target.agent_id = "ATTACKER"
         await session.commit()
 
@@ -169,12 +169,16 @@ async def test_dropped_row_breaks_replay_gate(
 
     async with session_factory() as session:
         rows = (
-            await session.execute(
-                select(BeliefRecord)
-                .where(BeliefRecord.run_id == run_id)
-                .order_by(BeliefRecord.seq.asc())
+            (
+                await session.execute(
+                    select(BeliefRecord)
+                    .where(BeliefRecord.run_id == run_id)
+                    .order_by(BeliefRecord.seq.asc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         # Drop the middle row.
         await session.delete(rows[1])
         await session.commit()

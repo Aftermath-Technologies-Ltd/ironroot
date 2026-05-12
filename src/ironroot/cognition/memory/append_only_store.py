@@ -1,5 +1,31 @@
 # Author: Bradley R. Kinnard
-"""append-only belief store with hash chain integrity."""
+"""In-memory append-only belief store — reference implementation.
+
+This module is the **canonical reference** for the chain-hash algorithm.
+It exists for three reasons (Phase 1.8 decision):
+
+1. It is the cross-language parity target. The TypeScript port
+   ``@ironroot/core`` ships ``AppendOnlyBeliefStore`` with identical
+   semantics, and the fixtures under ``packages/core-ts/test/fixtures/``
+   assert byte-identical chain digests between the two implementations.
+2. It is the small, dependency-free primitive that the README's
+   "Integrity guarantees" section refers to. Removing it would orphan
+   the README and the cross-language tests.
+3. It is the in-process backend for unit tests and the e2e research
+   cycle, where a full Postgres dependency would be overkill.
+
+The **production** belief service is ``ironroot.beliefs.BeliefService``
+— Postgres-backed, concurrency-safe (Phase 1.2 advisory lock), with
+typed observation/hypothesis/violation/prediction writers. The two
+implementations are deliberately *not* unified behind a shared
+Protocol: they serve different roles. ``AppendOnlyBeliefStore`` is the
+algorithm; ``BeliefService`` is the production system that applies that
+algorithm against a real database under concurrent writers.
+
+Test ``tests/unit/test_append_only_store_parity.py`` pins both
+implementations to the same chain-digest output for an equivalent
+input, so future drift between them is caught early.
+"""
 
 from dataclasses import dataclass
 

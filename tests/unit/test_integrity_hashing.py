@@ -153,9 +153,7 @@ class TestArtifactStoreIntegrity:
                 operator="ops_bot",
                 i_understand_this_violates_write_once=True,
             )
-            tamper_records = [
-                r for r in caplog.records if getattr(r, "event", None) == "tamper"
-            ]
+            tamper_records = [r for r in caplog.records if getattr(r, "event", None) == "tamper"]
             assert tamper_records, "expected a tamper-class log entry"
             assert tamper_records[0].levelno == logging.WARNING
             assert getattr(tamper_records[0], "operator", "") == "ops_bot"

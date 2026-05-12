@@ -159,9 +159,7 @@ class GateService:
             "live_digest": live_digest,
             "baseline_digest": baseline,
             "details": (
-                ""
-                if match
-                else f"replay digest mismatch: baseline={baseline} live={live_digest}"
+                "" if match else f"replay digest mismatch: baseline={baseline} live={live_digest}"
             ),
         }
 
@@ -193,30 +191,102 @@ class GateService:
         }
 
     async def _check_invariants(self, session: AsyncSession, run_id: str) -> dict[str, Any]:
-        """checks policy invariants for a run."""
-        # check belief chain invariants
+        """checks the three declared invariants for a run (Phase 1.6).
+
+        Covers all three from ``domain.invariants``: ``belief_hash_chain``,
+        ``budget_not_negative``, ``run_state_machine``. The artifact-
+        integrity invariant is the integrity gate's job and isn't
+        duplicated here.
+
+        Each failed check produces a typed Violation belief
+        (BeliefType.VIOLATION) so the violation itself is part of the
+        chain and surfaces in audits.
+        """
+        from ironroot.domain.invariants import (
+            BELIEF_HASH_CHAIN,
+            BUDGET_NOT_NEGATIVE,
+            RUN_STATE_MACHINE,
+        )
+
         belief_service = get_belief_service()
         chain_valid = await belief_service.verify_chain(session, run_id)
 
-        # check run is in valid state
         result = await session.execute(select(RunRecord).where(RunRecord.id == run_id))
         run = result.scalar_one_or_none()
 
-        state_valid = run is not None and run.status in (
-            "pending",
-            "running",
-            "completed",
-            "stopped",
-            "failed",
-        )
+        # Run-state-machine invariant — the run's status field is in the
+        # known finite set. Tightening to "valid transitions" is Phase 3
+        # work (proper lifecycle).
+        valid_statuses = {"pending", "running", "completed", "stopped", "failed"}
+        state_valid = run is not None and run.status in valid_statuses
 
-        all_valid = chain_valid and state_valid
+        # Budget-not-negative invariant — the third declared invariant
+        # that was missing pre-Phase 1.6. Negative budget counters would
+        # mean either over-decrement or write-corruption and warrant
+        # containment.
+        if run is None:
+            budget_valid = False
+            budget_details = "run not found"
+        else:
+            negatives = {
+                "steps_used": run.steps_used,
+                "tool_calls_used": run.tool_calls_used,
+                "belief_writes_used": run.belief_writes_used,
+            }
+            offending = {k: v for k, v in negatives.items() if v < 0}
+            budget_valid = not offending
+            budget_details = "" if budget_valid else f"negative budgets: {offending}"
 
+        violations: list[dict[str, str]] = []
+        if not chain_valid:
+            violations.append(
+                {
+                    "invariant": BELIEF_HASH_CHAIN.name,
+                    "details": "verify_chain returned False",
+                }
+            )
+        if not state_valid:
+            details = (
+                "run not found"
+                if run is None
+                else f"status '{run.status}' not in {sorted(valid_statuses)}"
+            )
+            violations.append({"invariant": RUN_STATE_MACHINE.name, "details": details})
+        if not budget_valid:
+            violations.append({"invariant": BUDGET_NOT_NEGATIVE.name, "details": budget_details})
+
+        # Emit one Violation belief per failed invariant. Violations are
+        # appended *after* the chain check has already failed, so they
+        # are themselves part of the (now-tampered) chain and visible to
+        # audits. We do not require the chain to be valid to record a
+        # violation — that would be self-defeating.
+        violation_belief_ids: list[str] = []
+        for v in violations:
+            try:
+                belief = await belief_service.create_violation_belief(
+                    session,
+                    run_id=run_id,
+                    agent_id="invariants_gate",
+                    invariant_name=v["invariant"],
+                    details=v["details"],
+                )
+                violation_belief_ids.append(belief.id)
+            except Exception:
+                # Recording the violation must never crash the gate; if
+                # the chain is so broken we can't even append a
+                # violation, the chain_valid=False signal already tells
+                # the operator something is very wrong.
+                pass
+
+        all_valid = chain_valid and state_valid and budget_valid
         return {
             "passed": all_valid,
             "chain_valid": chain_valid,
             "state_valid": state_valid,
-            "details": "" if all_valid else "invariant check failed",
+            "budget_valid": budget_valid,
+            "violations": violations,
+            "violation_belief_ids": violation_belief_ids,
+            "details": "" if all_valid else "; ".join(v["details"] for v in violations),
         }
 
     async def _check_regression(self, session: AsyncSession, run_id: str) -> dict[str, Any]:

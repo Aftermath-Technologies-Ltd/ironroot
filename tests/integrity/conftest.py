@@ -29,10 +29,10 @@ from sqlalchemy.ext.asyncio import (
 # Ensure debug mode for the settings guard before ironroot.* imports.
 os.environ.setdefault("IRONROOT_DEBUG", "true")
 
-from ironroot.beliefs import BeliefService  # noqa: E402
-from ironroot.domain.ids import generate_id  # noqa: E402
-from ironroot.storage.models import RunRecord  # noqa: E402
-from ironroot.storage.postgres import Base  # noqa: E402
+from ironroot.beliefs import BeliefService
+from ironroot.domain.ids import generate_id
+from ironroot.storage.models import RunRecord
+from ironroot.storage.postgres import Base
 
 
 @pytest_asyncio.fixture

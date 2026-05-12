@@ -33,13 +33,15 @@ preserved for the cross-language `@ironroot/core` parity fixtures.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from ironroot.domain.ids import hash_content
 from ironroot.storage.models import BeliefRecord
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 
 class _BeliefDigestRow(Protocol):
@@ -97,9 +99,7 @@ async def compute_chain_digest(session: AsyncSession, run_id: str) -> str:
     is well-defined for both cases.
     """
     result = await session.execute(
-        select(BeliefRecord)
-        .where(BeliefRecord.run_id == run_id)
-        .order_by(BeliefRecord.seq.asc())
+        select(BeliefRecord).where(BeliefRecord.run_id == run_id).order_by(BeliefRecord.seq.asc())
     )
     rows = list(result.scalars().all())
     return compute_chain_digest_from_rows(rows)  # type: ignore[arg-type]

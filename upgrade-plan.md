@@ -139,6 +139,95 @@ Outputs: a chain that is genuinely append-only under concurrency; write-once art
 
 Exit criteria: chain passes property-based concurrency tests; tampering any field of any belief row in a test DB causes the relevant gate to fail with a typed violation; `grep -r "ORDER BY created_at" src/ironroot` returns no chain-parent matches.
 
+### Phase 1 closeout (status 2026-05-12)
+
+All nine items merged on `main`. Quality bars from Phase 0 are preserved:
+`ruff check` 0 errors, `black --check` clean, `mypy --strict` 0 errors,
+RNG guard OK, **203 / 203 tests pass** (up from 165 at Phase 0 close —
++38 new integrity/consolidation tests). Coverage 34.7 % (floor 30).
+
+- **1.1** `beliefs.seq` `BigInteger` column with `UNIQUE(run_id, seq)`
+  and check constraint
+  `(parent_hash IS NULL AND seq = 1) OR (parent_hash IS NOT NULL AND
+  seq > 1)`. Alembic migration `002_beliefs_seq.py` backfills existing
+  rows in `(created_at, id)` order per `run_id` (documented ambiguity
+  caveat per upgrade-plan §Risks).
+- **1.2** Chain-parent lookup is now
+  `ORDER BY seq DESC LIMIT 1 FOR UPDATE` inside a per-chain
+  `pg_advisory_xact_lock` keyed on a stable signed bigint derived
+  from `sha256(run_id)`. Non-Postgres backends (the SQLite test
+  fixture) fall back to an `asyncio.Lock` that is held across the
+  session's `after_commit` / `after_rollback` events, matching the
+  PG advisory-lock semantics exactly. Re-entry within the same
+  session is a no-op so the executor's multi-append-per-session
+  pattern still works without deadlocking. The legacy
+  `ORDER BY created_at DESC` chain-parent query is gone — only
+  unrelated callers (`run_service`, `artifact_service`, etc.) still
+  use `created_at` ordering.
+- **1.3** `tests/integrity/test_chain_concurrency.py` covers three
+  scenarios: explicit 20-appender race, hypothesis-driven random N,
+  and a negative-control test that proves an unlocked appender path
+  *does* fork on the same fixture (the `UNIQUE(run_id, seq)`
+  constraint raises). The negative control is the safety net for
+  "did this test stop catching anything because of an environment
+  change?" — it must keep raising for the positive tests to mean
+  something.
+- **1.4** `ArtifactStore.delete()` removed from the public API. The
+  retention escape hatch is `_unsafe_delete`, gated on an explicit
+  `i_understand_this_violates_write_once=True` kwarg, non-empty
+  `reason=` and `operator=`, and a WARNING-level log tagged
+  `event=tamper` so audits surface every deletion. Three new unit
+  tests pin the new shape; no production caller used `delete()`.
+- **1.5** Replay gate now compares a live chain digest to a baseline
+  sealed on `runs.replay_digest` at first check. Digest is the
+  canonical sha256 over `(seq, parent_hash, content_hash, agent_id,
+  belief_type)` rows joined per row in seq order
+  (`verification.replay.compute_chain_digest`). The old "re-run
+  `verify_chain` and call that a replay check" logic is deleted —
+  that's the integrity gate's job. Alembic migration
+  `003_replay_digest.py` adds the column.
+- **1.6** Invariants gate (`gate_service._check_invariants`) now
+  covers all three core declared invariants:
+  `belief_hash_chain`, `run_state_machine`, `budget_not_negative`.
+  Each failed check emits a typed `BeliefType.VIOLATION` belief via
+  `BeliefService.create_violation_belief`, so violations are part of
+  the chain and surface in audits. Recording a violation is wrapped
+  in defensive exception handling — if the chain is already too
+  broken to append, the `passed=False` signal still propagates.
+- **1.7** Single canonical `BeliefService` lives at
+  `src/ironroot/beliefs/belief_service.py`. The legacy
+  `cognition/memory/belief_service.py` is now a
+  `DeprecationWarning` shim re-exporting the canonical class — a
+  fresh import emits the warning, and a CI test
+  (`tests/unit/test_belief_service_consolidation.py`) greps the
+  source for `class BeliefService` and asserts exactly one
+  definition under `src/ironroot/`. Internal callers
+  (`verification/gate_service.py`, `api/routes/beliefs.py`,
+  `tests/unit/test_belief_immutability.py`) updated. Generic
+  `create_belief` / `verify_chain` / `get_by_id` / `get_by_hash`
+  / `list_beliefs` / `update_belief` / `delete_belief` ported
+  onto the canonical class. `ContradictionService` moved to its
+  own module `beliefs/contradiction_service.py`.
+- **1.8** `AppendOnlyBeliefStore` decision: kept as the in-memory
+  canonical reference implementation that the `@ironroot/core`
+  TypeScript port mirrors and the cross-language fixtures pin to.
+  Its module docstring now explicitly names this role and points
+  callers at the production `BeliefService` for persistent /
+  concurrent use. `tests/unit/test_append_only_store_parity.py`
+  asserts both implementations agree on the chain digest for an
+  equivalent input.
+- **1.9** `tests/integrity/` holds the adversarial fixtures
+  (18 tests, all green): tampered `parent_hash`, tampered
+  `content_hash`, duplicate `(run_id, seq)`, CHECK-constraint
+  violations on malformed root rows, dropped rows, out-of-order
+  digest input, replay-gate seal+re-check+tamper-fail full cycle,
+  and the negative concurrency control. Positive controls
+  (empty chain, clean chain) included so the suite does not
+  false-positive when a regression makes everything "fail".
+
+Migrations history: `001_initial_schema` → `002_beliefs_seq` →
+`003_replay_digest`.
+
 ---
 
 ## Phase 2 — Promote the three subsystem groups

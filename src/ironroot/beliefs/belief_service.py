@@ -2,6 +2,7 @@
 """belief service with strict research discipline enforcement."""
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import re
@@ -27,6 +28,8 @@ class BeliefType(StrEnum):
     OBSERVATION = "observation"  # numeric measurements, zero interpretation
     HYPOTHESIS = "hypothesis"  # claims about causation, max 1 per run
     PREDICTION = "prediction"  # locked claims about future reality, penalties apply
+    VIOLATION = "violation"  # named invariant fired; emitted by the invariants gate
+    GATE_RESULT = "gate_result"  # gate decision belief (Phase 2a populates this)
 
 
 class MetricClass(StrEnum):
@@ -695,9 +698,7 @@ class BeliefService:
             return record
 
     @asynccontextmanager
-    async def _chain_lock(
-        self, session: AsyncSession, run_id: str
-    ) -> AsyncIterator[None]:
+    async def _chain_lock(self, session: AsyncSession, run_id: str) -> AsyncIterator[None]:
         """serializes appends per chain.
 
         Postgres: `pg_advisory_xact_lock(:key)` taken inside the current
@@ -748,11 +749,9 @@ class BeliefService:
                 return
             released = True
             self._session_holders.pop(holder_key, None)
-            try:
+            # already released = defensive RuntimeError suppression
+            with contextlib.suppress(RuntimeError):
                 lock.release()
-            except RuntimeError:
-                # already released — defensive only
-                pass
             # Listeners stay registered on the sync_session for its
             # lifetime; the ``released`` flag short-circuits any
             # subsequent firing. We deliberately do NOT call
@@ -881,18 +880,12 @@ class BeliefService:
         )
         return record
 
-    async def get_by_id(
-        self, session: AsyncSession, belief_id: str
-    ) -> BeliefRecord | None:
+    async def get_by_id(self, session: AsyncSession, belief_id: str) -> BeliefRecord | None:
         """fetches a belief by id."""
-        result = await session.execute(
-            select(BeliefRecord).where(BeliefRecord.id == belief_id)
-        )
+        result = await session.execute(select(BeliefRecord).where(BeliefRecord.id == belief_id))
         return result.scalar_one_or_none()
 
-    async def get_by_hash(
-        self, session: AsyncSession, content_hash: str
-    ) -> BeliefRecord | None:
+    async def get_by_hash(self, session: AsyncSession, content_hash: str) -> BeliefRecord | None:
         """fetches a belief by content hash."""
         result = await session.execute(
             select(BeliefRecord).where(BeliefRecord.content_hash == content_hash)
@@ -959,26 +952,55 @@ class BeliefService:
             if expected_seq == 1:
                 if belief.parent_hash is not None:
                     return False
-            else:
-                if belief.parent_hash != prev_hash:
-                    return False
+            elif belief.parent_hash != prev_hash:
+                return False
             prev_hash = belief.content_hash
             expected_seq += 1
         return True
+
+    async def create_violation_belief(
+        self,
+        session: AsyncSession,
+        run_id: str,
+        agent_id: str,
+        invariant_name: str,
+        details: str,
+        evidence_ids: list[str] | None = None,
+        topic_tags: list[str] | None = None,
+    ) -> BeliefRecord:
+        """records an invariant violation as a typed belief (Phase 1.6).
+
+        Emitted by the invariants gate whenever a named invariant fires.
+        The belief carries the invariant name, a human-readable reason,
+        and pointers to whichever evidence beliefs/artifacts surfaced the
+        violation. Confidence is 1.0 (the system is reporting a fact,
+        not a hypothesis).
+        """
+        content = {
+            "invariant": invariant_name,
+            "details": details,
+        }
+        return await self._create_belief(
+            session=session,
+            run_id=run_id,
+            agent_id=agent_id,
+            belief_type=BeliefType.VIOLATION,
+            content=content,
+            confidence=1.0,
+            topic_tags=["violation", invariant_name, *(topic_tags or [])],
+            parent_hash=None,
+            evidence_ids=evidence_ids or [],
+        )
 
     async def update_belief(
         self, session: AsyncSession, belief_id: str, content: dict[str, object]
     ) -> None:
         """beliefs are immutable; always raises."""
-        raise ImmutabilityViolation(
-            f"beliefs are append-only, cannot update belief {belief_id}"
-        )
+        raise ImmutabilityViolation(f"beliefs are append-only, cannot update belief {belief_id}")
 
     async def delete_belief(self, session: AsyncSession, belief_id: str) -> None:
         """beliefs are immutable; always raises."""
-        raise ImmutabilityViolation(
-            f"beliefs are append-only, cannot delete belief {belief_id}"
-        )
+        raise ImmutabilityViolation(f"beliefs are append-only, cannot delete belief {belief_id}")
 
 
 # singleton

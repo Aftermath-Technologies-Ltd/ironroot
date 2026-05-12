@@ -24,18 +24,17 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from hypothesis import HealthCheck, given, settings
-from hypothesis import strategies as st
+from hypothesis import HealthCheck, given, settings, strategies as st
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from ironroot.beliefs import BeliefService
+from ironroot.storage.models import BeliefRecord, RunRecord
 
 # Module-level counter ensures every hypothesis-generated belief gets a
 # globally unique payload, so the content_hash UNIQUE constraint never
 # fires across iterations that share a fixture run_id.
 _payload_counter = itertools.count()
-
-from ironroot.beliefs import BeliefService
-from ironroot.storage.models import BeliefRecord, RunRecord
 
 
 async def _append_one(
@@ -100,9 +99,7 @@ async def test_no_forks_under_concurrent_appenders(
         assert await belief_service.verify_chain(session, run_id) is True
 
         # property 5: belief_writes_used was incremented n times (generic API)
-        run = (
-            await session.execute(select(RunRecord).where(RunRecord.id == run_id))
-        ).scalar_one()
+        run = (await session.execute(select(RunRecord).where(RunRecord.id == run_id))).scalar_one()
         assert run.belief_writes_used == n
 
 
@@ -206,9 +203,7 @@ async def test_hypothesis_chain_stays_consistent_under_concurrency(
     # Tag every payload with a globally unique nonce so the content_hash
     # UNIQUE constraint can't be tripped by repeated payload shapes across
     # hypothesis iterations.
-    unique: list[dict[str, int]] = [
-        {**p, "_nonce": next(_payload_counter)} for p in payloads
-    ]
+    unique: list[dict[str, int]] = [{**p, "_nonce": next(_payload_counter)} for p in payloads]
     n = min(n_appenders, len(unique))
     if n < 2:
         return  # not enough material to race
@@ -232,12 +227,16 @@ async def test_hypothesis_chain_stays_consistent_under_concurrency(
 
     async with session_factory() as session:
         beliefs = (
-            await session.execute(
-                select(BeliefRecord)
-                .where(BeliefRecord.run_id == run_id)
-                .order_by(BeliefRecord.seq.asc())
+            (
+                await session.execute(
+                    select(BeliefRecord)
+                    .where(BeliefRecord.run_id == run_id)
+                    .order_by(BeliefRecord.seq.asc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         # property: seq is contiguous starting at 1 and no duplicates exist
         seqs = [b.seq for b in beliefs]

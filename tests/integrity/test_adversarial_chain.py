@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 import pytest
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ironroot.beliefs import BeliefService
 from ironroot.storage.models import BeliefRecord
@@ -57,12 +57,16 @@ async def test_tampering_parent_hash_breaks_verify_chain(
 
     async with session_factory() as session:
         target = (
-            await session.execute(
-                select(BeliefRecord)
-                .where(BeliefRecord.run_id == run_id)
-                .order_by(BeliefRecord.seq.asc())
+            (
+                await session.execute(
+                    select(BeliefRecord)
+                    .where(BeliefRecord.run_id == run_id)
+                    .order_by(BeliefRecord.seq.asc())
+                )
             )
-        ).scalars().all()[2]
+            .scalars()
+            .all()[2]
+        )
         target.parent_hash = "f" * 64  # bogus
         await session.commit()
 
@@ -81,12 +85,16 @@ async def test_tampering_content_hash_breaks_verify_chain(
 
     async with session_factory() as session:
         target = (
-            await session.execute(
-                select(BeliefRecord)
-                .where(BeliefRecord.run_id == run_id)
-                .order_by(BeliefRecord.seq.asc())
+            (
+                await session.execute(
+                    select(BeliefRecord)
+                    .where(BeliefRecord.run_id == run_id)
+                    .order_by(BeliefRecord.seq.asc())
+                )
             )
-        ).scalars().all()[1]
+            .scalars()
+            .all()[1]
+        )
         target.content_hash = "a" * 64
         await session.commit()
 
