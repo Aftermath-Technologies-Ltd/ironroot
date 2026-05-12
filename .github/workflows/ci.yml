@@ -29,8 +29,14 @@ jobs:
       - name: Run black check
         run: black --check src/ tests/
 
-      - name: Run mypy
-        run: mypy src/
+      - name: Run mypy (--strict)
+        run: mypy --strict src/
+
+      - name: Guard against random.* in non-experimental modules
+        run: python scripts/check_no_random_in_core.py
+
+      - name: Run id-prefix declaration test (fast feedback)
+        run: pytest -q --no-cov tests/unit/test_ids.py
 
   test:
     runs-on: ubuntu-latest
