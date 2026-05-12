@@ -257,6 +257,102 @@ Already covered structurally in 1.7–1.8; the promotion deliverable here is:
 
 Exit criteria: each of falsification, regression, replay gates has at least one real claim it can fail; restoration test passes deterministically; only one `BeliefService` exists in the codebase.
 
+### Phase 2 closeout (status 2026-05-12)
+
+All twelve items merged on `main`. Quality bars preserved:
+`ruff check src/ tests/` 0 errors, `mypy --strict src/` 0 errors,
+`black --check` clean, RNG guard OK, **238 / 238 tests pass**
+(up from 203 at Phase 1 close — +35 new Phase-2 tests). Coverage
+floor 30 still in effect.
+
+- **2a.1** `verification/falsification.py` replaced. New
+  `FalsifiableClaimRegistry` + `FalsificationAttempt` /
+  `FalsificationEvidence` / `FalsificationReport` types. Three
+  builtin claims ship: `chain_seq_monotonic`,
+  `parent_hash_linkage`, `artifact_hash_stability`. Empty registry
+  raises `ValueError("no_claims_registered")` — no free pass.
+- **2a.2** New `verification/regression.py` with
+  `RegressionSuite` / `RegressionCheck` primitives keyed by
+  `RunRecord.config["run_kind"]` (default `"default"`). Default
+  suite ships three real checks (`chain_is_non_empty`,
+  `seq_starts_at_one`, `no_orphaned_violation_beliefs`).
+  Suite passes iff every check passes AND `incident_count == 0`;
+  empty-incidents alone is no longer a free pass. Missing suite
+  raises and surfaces as a gate failure.
+- **2a.3** Already real (Phase 1.5). Replay digest now
+  filters `gate_result` and `violation` rows so the gate suite's
+  own writes don't drift the digest it's verifying.
+- **2a.4** Every gate inside `execute_gates` now appends a typed
+  `GATE_RESULT` belief via
+  `BeliefService.append_gate_result`. Each belief carries
+  `gate_name`, `passed`, `input_digest` (sha256 of canonical
+  inputs including `chain_tip_seq` so back-to-back invocations
+  produce distinct content hashes), and the gate-specific
+  decision dict.
+- **2a.5** Negative-path fixtures cover every gate:
+  - falsification: gap in seq, rewritten parent_hash, ghost
+    artifact bytes
+  - regression: seeded incident, missing suite for run_kind
+  - invariants: negative budget, tampered chain, unknown status
+  - integrity: ghost artifact
+  - replay: tampered lifecycle row, dropped row, full pass→tamper
+    →fail cycle
+- **2b.1** New `verification/fault_fixtures.py`. Deterministic
+  `FaultFixture` base + three concrete fixtures
+  (`ArtifactTamperFixture`, `BeliefParentHashTamperFixture`,
+  `MissingArtifactFixture`). Each provides
+  `apply` / `revert` / `replay`. Process-global
+  `FaultFixtureRegistry`. The orchestration executor's RNG fault
+  injection block (~140 LOC of repair/regression/containment
+  theatre) is deleted; replaced with a deterministic FaultFixture
+  lookup path that records the *observed* effect. The
+  `percent_*` RNG trigger condition is gone.
+- **2b.2** `healing/restoration.py` rewritten. `_verify_invariants`
+  and `_verify_replay` call the real `GateService._check_invariants`
+  and `._check_replay`. `_check_recurrence` is gone — recurrence is
+  measured by replaying the fixture `RECURRENCE_CHECK_COUNT` times.
+  `_apply_strategy` is gone; the fixture's `revert` is the only
+  strategy. No `random.*` anywhere in the module.
+- **2b.3** Restoration writes three typed PRIMARY observation
+  beliefs (`time_to_invariant_restoration_ms`,
+  `repair_success_rate_over_trials`,
+  `recurrence_rate_over_10_runs`) plus one INFERENCE belief whose
+  provenance points at the fault fixture id (`kind=restoration_outcome`).
+  On a verified restoration the replay baseline is re-sealed
+  (audited via `GateService.reseal_replay_baseline`) so the
+  legitimate new rows don't read as drift.
+- **2b.4** End-to-end fixture test
+  (`tests/integrity/test_fault_fixtures.py::test_end_to_end_fault
+  _then_restore_then_replay_stable`): seed → seal → apply
+  `ArtifactTamperFixture` → gates fail (falsification + integrity)
+  → restoration with same fixture → gates pass → second consecutive
+  gate run produces an identical chain digest. The "second replay
+  produces identical digest" deliverable is verified end-to-end.
+- **2c.1** All `src/ironroot/**` subsystem callers and integration
+  tests import from `ironroot.beliefs` (the public package).
+  Internal sub-module path `ironroot.beliefs.belief_service` and
+  legacy path `ironroot.cognition.memory.belief_service` are
+  reserved for the public re-export, the deprecation shim, and
+  the consolidation test. Enforced by
+  `tests/unit/test_belief_service_callers.py` (2 cases).
+- **2c.2** `BeliefService.append_observation`,
+  `append_inference`, `append_gate_result` typed write API on the
+  canonical service. No free-form `MetricClass` strings at call
+  sites; `MetricClass` enum required.
+- **2c.3** `beliefs.provenance` JSONB NOT NULL column added via
+  migration `004_beliefs_provenance.py`. CHECK constraint
+  `ck_beliefs_provenance_for_derived` enforces non-empty
+  provenance for non-(lifecycle/observation) belief types at the
+  DB level. `BeliefService._validate_provenance` enforces
+  PRIMARY-vs-SECONDARY at the service layer. New
+  `ProvenanceRef` dataclass with kind / belief_ids /
+  artifact_ids / fixture_ids / notes; `to_dict()` returns `{}`
+  when empty so the DB CHECK trips on derived rows that try to
+  bypass the rule.
+
+Migrations history: `001_initial_schema` → `002_beliefs_seq` →
+`003_replay_digest` → `004_beliefs_provenance`.
+
 ---
 
 ## Phase 3 — Surface integrity to operators
