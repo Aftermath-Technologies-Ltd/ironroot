@@ -244,7 +244,7 @@ async def _probe_redis() -> SubsystemStatus:
     client = redis_asyncio.from_url(settings.redis_url, socket_timeout=REDIS_PROBE_TIMEOUT_SECONDS)
     try:
         ping_call = client.ping()
-        await asyncio.wait_for(ping_call, timeout=REDIS_PROBE_TIMEOUT_SECONDS)  # type: ignore[arg-type]
+        await asyncio.wait_for(ping_call, timeout=REDIS_PROBE_TIMEOUT_SECONDS)
         latency_ms = (time.perf_counter() - started) * 1000.0
         return SubsystemStatus(status="ok", latency_ms=round(latency_ms, 3))
     except TimeoutError:
