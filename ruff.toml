@@ -22,6 +22,7 @@ select = [
 ]
 ignore = [
     "PLR0913",  # too many arguments
+    "PLR0917",  # too many positional arguments (the positional split of PLR0913, stabilized in newer ruff)
     "PLR2004",  # magic value comparison
     "ARG001",   # unused function arguments (placeholder code)
     "ARG002",   # unused method arguments (placeholder code)
